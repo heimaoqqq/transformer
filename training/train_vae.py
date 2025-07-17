@@ -104,7 +104,16 @@ class MicroDopplerVAELoss(nn.Module):
 
 def train_vae(args):
     """VAE训练主函数"""
-    
+
+    # 内存优化设置
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+
+    # 清理GPU缓存
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print(f"🎮 GPU内存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+
     # 初始化加速器
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -232,7 +241,11 @@ def train_vae(args):
                 
                 optimizer.step()
                 optimizer.zero_grad()
-            
+
+                # 定期清理GPU缓存
+                if global_step % 50 == 0 and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
             # 更新进度条
             if accelerator.sync_gradients:
                 global_step += 1

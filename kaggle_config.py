@@ -19,19 +19,21 @@ IMAGE_SIZE = 256
 
 # 训练配置 (针对Kaggle环境优化)
 KAGGLE_CONFIG = {
-    # VAE训练配置
+    # VAE训练配置 (内存优化)
     "vae": {
-        "batch_size": 8,  # Kaggle GPU内存限制
-        "num_epochs": 50,  # 减少epoch数以适应时间限制
+        "batch_size": 4,  # 减小批次大小避免OOM
+        "num_epochs": 30,  # 减少epoch数以适应时间限制
         "learning_rate": 1e-4,
         "mixed_precision": "fp16",
-        "gradient_accumulation_steps": 2,
+        "gradient_accumulation_steps": 4,  # 增加梯度累积保持有效批次大小
         "kl_weight": 1e-6,
-        "perceptual_weight": 0.1,
+        "perceptual_weight": 0.0,  # 禁用感知损失节省内存
         "freq_weight": 0.05,
+        "resolution": 128,  # 降低分辨率节省内存
+        "num_workers": 1,  # 减少worker数
         "save_interval": 10,
         "log_interval": 5,
-        "sample_interval": 100,
+        "sample_interval": 200,  # 减少采样频率
     },
     
     # 扩散训练配置
@@ -135,8 +137,8 @@ def get_kaggle_train_command(stage="vae"):
     --kl_weight {config['kl_weight']} \\
     --perceptual_weight {config['perceptual_weight']} \\
     --freq_weight {config['freq_weight']} \\
-    --resolution {data_config['resolution']} \\
-    --num_workers {data_config['num_workers']} \\
+    --resolution {config['resolution']} \\
+    --num_workers {config['num_workers']} \\
     --save_interval {config['save_interval']} \\
     --log_interval {config['log_interval']} \\
     --sample_interval {config['sample_interval']} \\
