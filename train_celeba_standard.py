@@ -87,7 +87,7 @@ def launch_celeba_training():
         "--gradient_accumulation_steps", str(config["gradient_accumulation"]),
         "--kl_weight", "1e-6",  # 降低KL权重，避免过度正则化
         "--perceptual_weight", "0.1",  # 降低感知损失权重，避免设备问题
-        "--freq_weight", "0.05",  # 微多普勒特有
+        "--freq_weight", "0.0",  # 禁用频域损失，当作普通图像训练
         "--resolution", "64",  # CelebA标准分辨率
         "--num_workers", str(config["num_workers"]),
         "--save_interval", "5",
@@ -102,6 +102,7 @@ def launch_celeba_training():
     print(f"📊 配置: 批次{config['batch_size']} × 累积{config['gradient_accumulation']} = 有效批次{effective_batch}")
     print(f"⚙️  参数: 学习率{config['learning_rate']}, 精度{config['mixed_precision']}, 线程{config['num_workers']}")
     print(f"🎯 目标: 64×64→8×8×4, 压缩比48:1, PSNR>25dB")
+    print(f"🖼️  模式: 普通图像训练 (禁用频域损失)")
     
     try:
         # 启动训练
@@ -132,10 +133,11 @@ def launch_celeba_training():
 
 def main():
     """主函数"""
-    print("🎨 微多普勒VAE训练 (小数据集优化)")
+    print("🎨 VAE训练 (普通图像模式)")
 
     print("📊 数据集: ~5000张图像, 31用户")
     print("🎯 目标: 64×64→8×8×4, PSNR>25dB")
+    print("🖼️  训练模式: 普通图像 (无频域特殊处理)")
 
     success = launch_celeba_training()
 
