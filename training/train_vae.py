@@ -172,30 +172,36 @@ def train_vae(args):
         )
     
     # 创建VAE模型 - CelebA标准配置
-    # 数据加载器已将图像缩放到64×64，VAE进行3层下采样: 64→32→16→8
-    print("🎨 使用CelebA标准VAE配置")
-    print("   📐 输入: 64×64×3 (数据加载器缩放)")
-    print("   🔽 下采样: 64→32→16→8 (3层)")
-    print("   🎯 潜在空间: 8×8×4")
-    print("   📊 压缩比: 48:1")
+    # 解析架构参数
+    down_blocks = args.down_block_types.split(',')
+    up_blocks = args.up_block_types.split(',')
+    channels = [int(c) for c in args.block_out_channels.split(',')]
+
+    # 计算压缩比
+    num_downsample = len(down_blocks)
+    downsample_factor = 2 ** num_downsample
+    latent_size = args.resolution // downsample_factor
+    input_pixels = args.resolution * args.resolution * 3
+    latent_pixels = latent_size * latent_size * args.latent_channels
+    compression_ratio = input_pixels / latent_pixels
+
+    print("🎨 使用可配置VAE架构")
+    print(f"   📐 输入: {args.resolution}×{args.resolution}×3")
+    print(f"   🔽 下采样层数: {num_downsample}")
+    print(f"   🎯 潜在空间: {latent_size}×{latent_size}×{args.latent_channels}")
+    print(f"   📊 压缩比: {compression_ratio:.1f}:1")
+    print(f"   🧱 每层块数: {args.layers_per_block}")
+    print(f"   📈 通道数: {channels}")
 
     vae = AutoencoderKL(
         in_channels=3,
         out_channels=3,
-        down_block_types=[
-            "DownEncoderBlock2D",  # 64→32
-            "DownEncoderBlock2D",  # 32→16
-            "DownEncoderBlock2D"   # 16→8
-        ],
-        up_block_types=[
-            "UpDecoderBlock2D",    # 8→16
-            "UpDecoderBlock2D",    # 16→32
-            "UpDecoderBlock2D"     # 32→64
-        ],
-        block_out_channels=[64, 128, 256],  # CelebA标准通道配置
-        latent_channels=4,
-        sample_size=64,  # 固定为CelebA标准
-        layers_per_block=1,  # CelebA标准: 每层1个ResNet块
+        down_block_types=down_blocks,
+        up_block_types=up_blocks,
+        block_out_channels=channels,
+        latent_channels=args.latent_channels,
+        sample_size=args.resolution,
+        layers_per_block=args.layers_per_block,
         act_fn="silu",
         norm_num_groups=32,
         scaling_factor=0.18215,
@@ -416,7 +422,17 @@ def main():
     parser.add_argument("--kl_weight", type=float, default=1e-6, help="KL散度权重")
     parser.add_argument("--perceptual_weight", type=float, default=0.1, help="感知损失权重")
     parser.add_argument("--freq_weight", type=float, default=0.05, help="频域损失权重")
-    
+
+    # VAE架构参数
+    parser.add_argument("--down_block_types", type=str, default="DownEncoderBlock2D,DownEncoderBlock2D,DownEncoderBlock2D",
+                       help="下采样块类型 (逗号分隔)")
+    parser.add_argument("--up_block_types", type=str, default="UpDecoderBlock2D,UpDecoderBlock2D,UpDecoderBlock2D",
+                       help="上采样块类型 (逗号分隔)")
+    parser.add_argument("--block_out_channels", type=str, default="64,128,256",
+                       help="输出通道数 (逗号分隔)")
+    parser.add_argument("--layers_per_block", type=int, default=1, help="每层块数")
+    parser.add_argument("--latent_channels", type=int, default=4, help="潜在空间通道数")
+
     # 系统参数
     parser.add_argument("--num_workers", type=int, default=4, help="数据加载器工作进程数")
     parser.add_argument("--mixed_precision", type=str, default="fp16", help="混合精度")

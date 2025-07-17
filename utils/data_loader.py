@@ -133,15 +133,17 @@ class MicroDopplerDataset(Dataset):
         """
         transform_list = []
 
-        # 基础变换 - 采用CelebA标准做法
-        # CelebA标准: 先缩放到64×64，然后VAE下采样到8×8
-        # 这是成熟项目的标准做法，大幅提升训练效率
-        celeba_resolution = 64
-        print(f"🎨 采用CelebA标准: 缩放到 {celeba_resolution}×{celeba_resolution} (原始: {self.resolution}×{self.resolution})")
-        print(f"   📊 优势: 显存减少5倍, 训练速度提升4倍, 批次大小增加8倍")
+        # 现代化变换 - 采用128×128高质量方案
+        # 现代标准: 128×128输入，VAE下采样到32×32
+        # 使用Lanczos插值获得最佳质量
+        modern_resolution = 128
+        print(f"🎨 采用现代化标准: 缩放到 {modern_resolution}×{modern_resolution} (原始: {self.resolution}×{self.resolution})")
+        print(f"   🖼️  缩放方法: Lanczos (现代高质量插值)")
+        print(f"   📊 优势: 4倍信息容量, 更好细节保留, 现代VAE标准")
 
         transform_list.extend([
-            transforms.Resize((celeba_resolution, celeba_resolution)),  # CelebA标准分辨率
+            transforms.Resize((modern_resolution, modern_resolution),
+                            interpolation=transforms.InterpolationMode.LANCZOS),  # 现代高质量缩放
             transforms.ToTensor(),
         ])
 
