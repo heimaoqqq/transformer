@@ -44,7 +44,11 @@
 # 5. 检查训练质量
 !python check_vae.py
 
-# 6. 扩散模型训练 (可选)
+# 6. 如果质量不佳，使用诊断工具
+!python diagnose_vae.py     # 分析问题原因
+!python quick_test_vae.py   # 测试新配置
+
+# 7. 扩散模型训练 (可选)
 !python training/train_diffusion.py \
     --data_dir /kaggle/input/dataset \
     --vae_path /kaggle/working/outputs/vae_celeba_standard/final_model \
@@ -115,6 +119,9 @@ python inference/generate.py \
 │   └── metrics.py        # 评估指标
 ├── train_celeba_standard.py # 主训练脚本 (推荐)
 ├── check_vae.py          # VAE质量检查
+├── diagnose_vae.py       # VAE问题诊断工具
+├── quick_test_vae.py     # 快速配置测试
+├── install_lpips.py      # 感知损失管理
 ├── ultimate_fix_kaggle.py # 依赖修复工具
 └── requirements.txt      # 依赖管理
 ```
@@ -143,14 +150,26 @@ python inference/generate.py \
 
 ## 🔧 故障排除
 
+### 基础问题
 1. **依赖冲突**: 运行 `python ultimate_fix_kaggle.py`
 2. **感知损失问题**: 运行 `python install_lpips.py` (自动处理)
 3. **CUDA内存不足**: 减小batch_size
-4. **VAE重建质量差**:
-   - 确保感知损失已启用 (perceptual_weight=1.0)
-   - 检查KL权重设置 (推荐1e-4)
-   - 增加训练轮数
-5. **训练中断**: 检查数据路径和格式
+4. **训练中断**: 检查数据路径和格式
+
+### VAE重建质量差 (PSNR < 20dB)
+```bash
+# 1. 诊断问题
+python diagnose_vae.py      # 分析损失组成和模型行为
+
+# 2. 测试新配置
+python quick_test_vae.py    # 验证参数设置
+
+# 3. 常见修复
+# - KL权重过高: 1e-4 → 1e-6
+# - 学习率过高: 2e-4 → 1e-4
+# - 感知损失设备问题: 权重1.0 → 0.1
+# - 训练不足: 增加轮数到80+
+```
 
 ## 🎯 使用建议
 
