@@ -30,20 +30,20 @@ def get_gpu_optimized_config(gpu_type):
     
     if gpu_type == "P100":
         return {
-            "batch_size": 12,           # P100内存大(16GB)
+            "batch_size": 8,            # P100保守批次
             "mixed_precision": "no",    # P100没有Tensor Core
-            "learning_rate": "0.0003",  # 配合大批次
-            "gradient_accumulation": 1, # 不需要累积
-            "num_workers": 4,           # 多线程
-            "memory_efficient": False,  # P100内存充足
+            "learning_rate": "0.0002",  # 适中学习率
+            "gradient_accumulation": 2, # 适中累积
+            "num_workers": 2,           # 适中线程
+            "memory_efficient": True,   # 保守内存管理
         }
     elif gpu_type == "T4":
         return {
-            "batch_size": 6,            # T4内存小(15GB)
+            "batch_size": 4,            # T4保守批次
             "mixed_precision": "fp16",  # T4有Tensor Core
-            "learning_rate": "0.0002",  
-            "gradient_accumulation": 2, # 适中累积
-            "num_workers": 2,           # 适中线程
+            "learning_rate": "0.00015", # 降低学习率
+            "gradient_accumulation": 4, # 增加累积保持有效批次
+            "num_workers": 1,           # 单线程避免竞争
             "memory_efficient": True,   # T4需要节省内存
         }
     else:
