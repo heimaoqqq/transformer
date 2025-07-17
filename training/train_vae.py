@@ -45,12 +45,26 @@ class MicroDopplerVAELoss(nn.Module):
         self.mse_loss = nn.MSELoss()
         
         # 感知损失 (可选，需要安装 lpips)
-        try:
-            import lpips
-            self.lpips_loss = lpips.LPIPS(net='vgg')
-        except ImportError:
-            print("Warning: LPIPS not available, using MSE only")
-            self.lpips_loss = None
+        self.lpips_loss = None
+        if self.perceptual_weight > 0:
+            try:
+                import lpips
+                self.lpips_loss = lpips.LPIPS(net='vgg')
+                print("✅ LPIPS感知损失已加载")
+            except ImportError:
+                print("⚠️  LPIPS not available, disabling perceptual loss")
+                self.perceptual_weight = 0.0
+            except Exception as e:
+                print(f"⚠️  LPIPS加载失败: {e}, disabling perceptual loss")
+                self.perceptual_weight = 0.0
+                self.lpips_loss = None
+
+    def to(self, device):
+        """移动损失函数到指定设备"""
+        super().to(device)
+        if self.lpips_loss is not None:
+            self.lpips_loss = self.lpips_loss.to(device)
+        return self
     
     def forward(self, reconstruction, target, posterior):
         """
@@ -70,7 +84,7 @@ class MicroDopplerVAELoss(nn.Module):
         
         # 3. 感知损失
         perceptual_loss = 0.0
-        if self.lpips_loss is not None:
+        if self.lpips_loss is not None and self.perceptual_weight > 0:
             # 归一化到[-1, 1]
             recon_norm = reconstruction * 2.0 - 1.0
             target_norm = target * 2.0 - 1.0
@@ -235,6 +249,10 @@ def train_vae(args):
     vae, optimizer, dataloader, lr_scheduler = accelerator.prepare(
         vae, optimizer, dataloader, lr_scheduler
     )
+
+    # 移动损失函数到正确的设备
+    loss_fn = loss_fn.to(accelerator.device)
+    print(f"✅ 损失函数已移动到设备: {accelerator.device}")
     
     # 训练循环
     global_step = 0
