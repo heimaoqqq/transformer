@@ -90,30 +90,80 @@ def install_base_system():
     print("\n3️⃣ 安装SciPy...")
     run_command("pip install scipy==1.10.1", "安装SciPy")
 
+def check_gpu_environment():
+    """检查GPU环境"""
+    print("\n🔍 检查GPU环境")
+    print("=" * 30)
+
+    # 1. 检查nvidia-smi
+    print("\n1️⃣ 检查nvidia-smi...")
+    try:
+        result = subprocess.run(['nvidia-smi'], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("✅ nvidia-smi可用")
+            # 提取GPU信息
+            lines = result.stdout.split('\n')
+            gpu_found = False
+            for line in lines:
+                if any(gpu in line for gpu in ['Tesla', 'T4', 'P100', 'V100', 'A100']):
+                    print(f"   🎯 检测到GPU: {line.strip()}")
+                    gpu_found = True
+
+            if not gpu_found:
+                print("⚠️  nvidia-smi运行但未检测到GPU")
+                return False
+            return True
+        else:
+            print("❌ nvidia-smi失败")
+            return False
+    except Exception as e:
+        print(f"❌ nvidia-smi异常: {e}")
+        return False
+
 def install_pytorch_stack():
     """安装PyTorch技术栈"""
     print("\n🔥 安装PyTorch技术栈")
     print("=" * 30)
-    
-    # PyTorch安装选项 (从最稳定到最保守)
-    pytorch_options = [
-        # 选项1: CPU版本 (最稳定)
-        {
-            "cmd": "pip install torch==2.1.0+cpu torchvision==0.16.0+cpu --index-url https://download.pytorch.org/whl/cpu",
-            "desc": "PyTorch 2.1.0 CPU版本"
-        },
-        # 选项2: 较旧CUDA版本
-        {
-            "cmd": "pip install torch==2.0.1 torchvision==0.15.2",
-            "desc": "PyTorch 2.0.1 默认版本"
-        },
-        # 选项3: 最保守版本
-        {
-            "cmd": "pip install torch==1.13.1 torchvision==0.14.1",
-            "desc": "PyTorch 1.13.1 保守版本"
-        }
-    ]
-    
+
+    # 检查GPU环境
+    has_gpu = check_gpu_environment()
+
+    if has_gpu:
+        print("\n🎯 检测到GPU，安装CUDA版本PyTorch")
+        # GPU环境：优先安装CUDA版本
+        pytorch_options = [
+            # 选项1: CUDA 12.1版本
+            {
+                "cmd": "pip install torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu121",
+                "desc": "PyTorch 2.1.0 CUDA 12.1版本"
+            },
+            # 选项2: CUDA 11.8版本
+            {
+                "cmd": "pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118",
+                "desc": "PyTorch 2.0.1 CUDA 11.8版本"
+            },
+            # 选项3: 默认版本
+            {
+                "cmd": "pip install torch==2.1.0 torchvision==0.16.0",
+                "desc": "PyTorch 2.1.0 默认版本"
+            }
+        ]
+    else:
+        print("\n💻 未检测到GPU，安装CPU版本PyTorch")
+        # CPU环境：安装CPU版本
+        pytorch_options = [
+            # 选项1: CPU版本
+            {
+                "cmd": "pip install torch==2.1.0+cpu torchvision==0.16.0+cpu --index-url https://download.pytorch.org/whl/cpu",
+                "desc": "PyTorch 2.1.0 CPU版本"
+            },
+            # 选项2: 较旧版本
+            {
+                "cmd": "pip install torch==1.13.1 torchvision==0.14.1",
+                "desc": "PyTorch 1.13.1 保守版本"
+            }
+        ]
+
     for i, option in enumerate(pytorch_options, 1):
         print(f"\n尝试方案 {i}: {option['desc']}")
         if run_command(option["cmd"], option["desc"]):
@@ -122,7 +172,7 @@ def install_pytorch_stack():
     else:
         print("❌ 所有PyTorch安装方案都失败")
         return False
-    
+
     return True
 
 def install_ai_packages():
@@ -160,18 +210,90 @@ def install_utility_packages():
     for package, name in utility_packages:
         run_command(f"pip install {package}", f"安装 {name}")
 
+def test_gpu_functionality():
+    """测试GPU功能"""
+    print("\n🎮 GPU功能测试:")
+
+    try:
+        import torch
+
+        # 检查PyTorch版本
+        pytorch_version = torch.__version__
+        print(f"✅ PyTorch版本: {pytorch_version}")
+
+        # 检查CUDA编译支持
+        cuda_version = torch.version.cuda
+        print(f"✅ CUDA编译版本: {cuda_version}")
+
+        # 检查CUDA可用性
+        cuda_available = torch.cuda.is_available()
+        print(f"{'✅' if cuda_available else '❌'} CUDA可用: {cuda_available}")
+
+        if cuda_available:
+            # GPU详细信息
+            device_count = torch.cuda.device_count()
+            print(f"✅ GPU数量: {device_count}")
+
+            for i in range(device_count):
+                gpu_name = torch.cuda.get_device_name(i)
+                props = torch.cuda.get_device_properties(i)
+                memory_gb = props.total_memory / 1024**3
+                print(f"✅ GPU {i}: {gpu_name}")
+                print(f"   内存: {memory_gb:.1f} GB")
+                print(f"   计算能力: {props.major}.{props.minor}")
+
+            # 测试GPU操作
+            device = torch.device('cuda:0')
+            test_tensor = torch.randn(100, 100, device=device)
+            result = torch.mm(test_tensor, test_tensor.t())
+
+            print("✅ GPU张量操作成功")
+            print(f"   设备: {test_tensor.device}")
+
+            # 内存使用情况
+            torch.cuda.empty_cache()
+            memory_allocated = torch.cuda.memory_allocated(0) / 1024**2
+            print(f"   已分配内存: {memory_allocated:.1f} MB")
+
+            return True
+        else:
+            # CPU模式
+            print("ℹ️  使用CPU模式")
+            test_tensor = torch.randn(100, 100)
+            result = torch.mm(test_tensor, test_tensor.t())
+            print("✅ CPU张量操作成功")
+
+            # 检查是否为CPU版本
+            if '+cpu' in pytorch_version:
+                print("⚠️  检测到CPU版本PyTorch")
+                print("   如需GPU支持，请重新安装CUDA版本")
+                return False
+            else:
+                print("⚠️  CUDA不可用但PyTorch支持CUDA")
+                print("   可能是驱动或环境问题")
+                return False
+
+    except Exception as e:
+        print(f"❌ GPU测试失败: {e}")
+        return False
+
 def comprehensive_test():
     """全面测试"""
     print("\n🧪 全面功能测试")
     print("=" * 30)
-    
+
     # 清理模块缓存
     modules_to_clear = ['numpy', 'torch', 'torchvision', 'diffusers', 'transformers', 'scipy', 'sklearn']
     for module in modules_to_clear:
         if module in sys.modules:
             del sys.modules[module]
-    
+
     test_results = {}
+
+    # 测试0: GPU功能
+    print("\n0️⃣ 测试GPU功能...")
+    gpu_ok = test_gpu_functionality()
+    test_results['gpu'] = gpu_ok
     
     # 测试1: NumPy
     print("\n1️⃣ 测试NumPy...")
@@ -257,17 +379,24 @@ def comprehensive_test():
     print("\n📊 测试总结:")
     passed = sum(test_results.values())
     total = len(test_results)
-    
+
     for test_name, result in test_results.items():
         status = "✅" if result else "❌"
         print(f"   {status} {test_name}")
-    
+
     print(f"\n总体结果: {passed}/{total} 通过")
-    
+
     # 关键测试
     critical_tests = ['numpy', 'torch', 'diffusers', 'vae']
     critical_passed = all(test_results.get(test, False) for test in critical_tests)
-    
+
+    # GPU建议
+    if not test_results.get('gpu', False):
+        print("\n💡 GPU建议:")
+        print("   - 检查Kaggle GPU设置")
+        print("   - 重启内核后重新运行")
+        print("   - 或使用CPU模式训练")
+
     return critical_passed, test_results
 
 def main():
@@ -297,23 +426,41 @@ def main():
         # 阶段6: 全面测试
         print("\n" + "=" * 50 + " 最终测试 " + "=" * 50)
         
-        success, results = comprehensive_test()
-        
+        success, test_results = comprehensive_test()
+
         if success:
             print("\n🎉 修复成功！所有关键组件正常工作")
             print("\n📋 下一步:")
-            print("   python train_kaggle.py --stage all")
-            print("\n💡 提示:")
-            print("   - 环境已完全重建")
-            print("   - 所有版本冲突已解决")
-            print("   - 可以开始训练")
+
+            # 根据GPU状态给出建议
+            if test_results.get('gpu', False):
+                print("   python train_kaggle.py --stage all")
+                print("\n💡 提示:")
+                print("   - 环境已完全重建")
+                print("   - GPU可用，可以全速训练")
+                print("   - 所有版本冲突已解决")
+            else:
+                print("   python train_kaggle.py --stage all --device cpu")
+                print("\n💡 提示:")
+                print("   - 环境已完全重建")
+                print("   - 使用CPU模式训练")
+                print("   - 训练时间会较长")
+
             return True
         else:
             print("\n⚠️  部分组件仍有问题")
             print("\n🔧 建议:")
-            print("   1. 重启Kaggle内核")
-            print("   2. 重新运行此脚本")
-            print("   3. 检查Kaggle环境限制")
+
+            # 具体建议
+            if not test_results.get('gpu', False):
+                print("   1. 检查Kaggle GPU设置")
+                print("   2. 重启内核并重新运行")
+            if not test_results.get('torch', False):
+                print("   3. PyTorch安装问题")
+            if not test_results.get('diffusers', False):
+                print("   4. Diffusers版本问题")
+
+            print("   5. 或联系技术支持")
             return False
             
     except Exception as e:
