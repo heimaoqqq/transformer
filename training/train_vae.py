@@ -157,25 +157,31 @@ def train_vae(args):
             name=f"vae-{args.experiment_name}"
         )
     
-    # 创建VAE模型
-    # 优化的VAE架构: 3层下采样 256→128→64→32
+    # 创建VAE模型 - CelebA标准配置
+    # 数据加载器已将图像缩放到64×64，VAE进行3层下采样: 64→32→16→8
+    print("🎨 使用CelebA标准VAE配置")
+    print("   📐 输入: 64×64×3 (数据加载器缩放)")
+    print("   🔽 下采样: 64→32→16→8 (3层)")
+    print("   🎯 潜在空间: 8×8×4")
+    print("   📊 压缩比: 48:1")
+
     vae = AutoencoderKL(
         in_channels=3,
         out_channels=3,
         down_block_types=[
-            "DownEncoderBlock2D",  # 256→128
-            "DownEncoderBlock2D",  # 128→64
-            "DownEncoderBlock2D"   # 64→32
+            "DownEncoderBlock2D",  # 64→32
+            "DownEncoderBlock2D",  # 32→16
+            "DownEncoderBlock2D"   # 16→8
         ],
         up_block_types=[
-            "UpDecoderBlock2D",    # 32→64
-            "UpDecoderBlock2D",    # 64→128
-            "UpDecoderBlock2D"     # 128→256
+            "UpDecoderBlock2D",    # 8→16
+            "UpDecoderBlock2D",    # 16→32
+            "UpDecoderBlock2D"     # 32→64
         ],
-        block_out_channels=[128, 256, 512],  # 减少一层
+        block_out_channels=[64, 128, 256],  # CelebA标准通道配置
         latent_channels=4,
-        sample_size=args.resolution,
-        layers_per_block=2,
+        sample_size=64,  # 固定为CelebA标准
+        layers_per_block=1,  # CelebA标准: 每层1个ResNet块
         act_fn="silu",
         norm_num_groups=32,
         scaling_factor=0.18215,
