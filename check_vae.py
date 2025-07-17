@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
-VAE训练检查工具 - 简化版
+VAE训练检查工具 - 现代化版本
 检查训练状态、模型质量和重建效果
+
+更新内容:
+- 支持128×128输入分辨率 (匹配train_improved_quality.py)
+- 验证32×32潜在空间 (3层下采样架构)
+- 提高质量评估标准 (PSNR > 28dB为优秀)
+- 架构兼容性检查
 """
 
 import torch
@@ -46,8 +52,8 @@ class VAEChecker:
             vae = AutoencoderKL.from_pretrained(str(model_path))
             vae = vae.to(self.device).eval()
 
-            # 测试前向传播
-            test_input = torch.randn(1, 3, 64, 64).to(self.device)
+            # 测试前向传播 (使用128×128匹配新训练配置)
+            test_input = torch.randn(1, 3, 128, 128).to(self.device)
             with torch.no_grad():
                 posterior = vae.encode(test_input).latent_dist
                 latent = posterior.sample()
@@ -55,7 +61,17 @@ class VAEChecker:
 
             total_params = sum(p.numel() for p in vae.parameters())
             print(f"✅ 模型加载成功 - 参数量: {total_params:,}")
-            print(f"   📐 压缩比: {test_input.numel() / latent.numel():.1f}:1")
+            print(f"   📐 输入尺寸: {test_input.shape}")
+            print(f"   🎯 潜在尺寸: {latent.shape}")
+            print(f"   📊 压缩比: {test_input.numel() / latent.numel():.1f}:1")
+
+            # 验证架构是否匹配新配置
+            expected_latent_shape = (1, 4, 32, 32)
+            if latent.shape == expected_latent_shape:
+                print(f"   ✅ 架构验证: 正确的128×128→32×32配置")
+            else:
+                print(f"   ⚠️  架构警告: 潜在空间{latent.shape}，期望{expected_latent_shape}")
+                print(f"   💡 可能是旧版本模型，建议重新训练")
 
             return vae
 
@@ -75,7 +91,7 @@ class VAEChecker:
         try:
             dataset = MicroDopplerDataset(
                 data_dir=self.data_dir,
-                resolution=64,
+                resolution=128,  # 更新为128×128匹配新训练配置
                 augment=False,
                 split="test"
             )
@@ -136,13 +152,15 @@ class VAEChecker:
             print(f"   平均MSE: {avg_mse:.6f}")
             print(f"   平均PSNR: {avg_psnr:.2f} dB")
 
-            # 质量评估
-            if avg_psnr > 20:
+            # 质量评估 (128×128分辨率标准)
+            if avg_psnr > 28:
+                print("✅ 重建质量: 优秀 (现代化VAE标准)")
+            elif avg_psnr > 25:
                 print("✅ 重建质量: 良好")
-            elif avg_psnr > 15:
+            elif avg_psnr > 20:
                 print("⚠️  重建质量: 一般")
             else:
-                print("❌ 重建质量: 较差")
+                print("❌ 重建质量: 较差，需要重新训练")
 
             return {'mse': avg_mse, 'psnr': avg_psnr}
 
@@ -164,14 +182,16 @@ class VAEChecker:
         # 检查重建质量
         metrics = self.check_reconstruction_quality(vae)
 
-        # 总结
+        # 总结 (128×128现代化标准)
         print(f"\n📋 检查总结:")
-        if metrics and metrics['psnr'] > 20:
-            print("🎉 VAE训练成功！可以进行下一步扩散模型训练")
-        elif metrics and metrics['psnr'] > 15:
+        if metrics and metrics['psnr'] > 28:
+            print("🎉 VAE训练成功！达到现代化高质量标准，可以进行下一步扩散模型训练")
+        elif metrics and metrics['psnr'] > 25:
+            print("✅ VAE质量良好，可以进行扩散模型训练")
+        elif metrics and metrics['psnr'] > 20:
             print("⚠️  VAE质量一般，建议降低KL权重或延长训练")
         else:
-            print("❌ VAE质量较差，需要重新训练")
+            print("❌ VAE质量较差，需要重新训练或调整超参数")
 
     def create_simple_comparison(self, num_samples=4):
         """生成简单的左右对比图"""
@@ -184,7 +204,7 @@ class VAEChecker:
         try:
             dataset = MicroDopplerDataset(
                 data_dir=self.data_dir,
-                resolution=64,
+                resolution=128,  # 更新为128×128匹配新训练配置
                 augment=False,
                 split="test"
             )
