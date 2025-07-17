@@ -43,18 +43,29 @@ def check_python_version():
         return True
 
 def get_package_version(package_name, import_name=None):
-    """获取包版本"""
+    """获取包版本，避免导入冲突"""
     if import_name is None:
         import_name = package_name
-    
+
+    # 有冲突的包使用pkg_resources
+    problematic_packages = ['torchvision', 'transformers']
+
+    if package_name in problematic_packages:
+        try:
+            import pkg_resources
+            return pkg_resources.get_distribution(package_name).version
+        except Exception as e:
+            print(f"⚠️  无法获取 {package_name} 版本: {e}")
+            return "unknown"
+
     try:
         module = importlib.import_module(import_name)
-        
+
         # 尝试不同的版本属性
         for attr in ['__version__', 'version', 'VERSION']:
             if hasattr(module, attr):
                 return getattr(module, attr)
-        
+
         # 特殊处理
         if package_name == 'PIL':
             return module.PILLOW_VERSION
@@ -64,11 +75,19 @@ def get_package_version(package_name, import_name=None):
             return module.__version__
         elif package_name == 'skimage':
             return module.__version__
-        
+
         return "unknown"
-        
+
     except ImportError:
         return None
+    except Exception as e:
+        print(f"⚠️  导入 {import_name} 时出错: {e}")
+        # 尝试备用方法
+        try:
+            import pkg_resources
+            return pkg_resources.get_distribution(package_name).version
+        except:
+            return "error"
 
 def check_package_versions():
     """检查所有包版本"""
