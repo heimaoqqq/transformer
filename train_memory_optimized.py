@@ -23,24 +23,24 @@ def setup_memory_environment():
 
 def get_optimal_config():
     """根据GPU内存获取最优配置"""
-    
+
     gpu_count = torch.cuda.device_count()
-    
+
     if gpu_count >= 2:
-        # 双GPU配置 - 极保守
+        # 双GPU配置 - 256分辨率优化
         return {
-            "batch_size": 2,      # 每GPU 1个样本
-            "resolution": 128,    # 小分辨率
-            "num_workers": 0,     # 单线程
-            "gradient_accumulation_steps": 8,  # 大梯度累积
+            "batch_size": 6,      # 每GPU 3个样本，总共6个
+            "resolution": 256,    # 恢复256分辨率
+            "num_workers": 2,     # 多线程
+            "gradient_accumulation_steps": 2,  # 正常梯度累积
         }
     else:
         # 单GPU配置
         return {
-            "batch_size": 1,      # 单样本
-            "resolution": 64,     # 更小分辨率
-            "num_workers": 0,     # 单线程
-            "gradient_accumulation_steps": 16, # 更大梯度累积
+            "batch_size": 4,      # 单GPU更大批次
+            "resolution": 256,    # 256分辨率
+            "num_workers": 2,     # 多线程
+            "gradient_accumulation_steps": 4, # 适中梯度累积
         }
 
 def launch_optimized_training():
@@ -77,7 +77,7 @@ def launch_optimized_training():
             "--data_dir", "/kaggle/input/dataset",
             "--output_dir", "/kaggle/working/outputs/vae",
             "--batch_size", str(config["batch_size"]),
-            "--num_epochs", "20",  # 减少epoch数
+            "--num_epochs", "40",  # 恢复正常epoch数
             "--learning_rate", "0.0001",
             "--mixed_precision", "fp16",
             "--gradient_accumulation_steps", str(config["gradient_accumulation_steps"]),
@@ -88,7 +88,7 @@ def launch_optimized_training():
             "--num_workers", str(config["num_workers"]),
             "--save_interval", "10",
             "--log_interval", "5",
-            "--sample_interval", "500",  # 减少采样
+            "--sample_interval", "100",  # 恢复正常采样
             "--experiment_name", "kaggle_vae_optimized"
         ]
     else:
@@ -100,7 +100,7 @@ def launch_optimized_training():
             "--data_dir", "/kaggle/input/dataset",
             "--output_dir", "/kaggle/working/outputs/vae",
             "--batch_size", str(config["batch_size"]),
-            "--num_epochs", "20",
+            "--num_epochs", "40",
             "--learning_rate", "0.0001",
             "--mixed_precision", "fp16",
             "--gradient_accumulation_steps", str(config["gradient_accumulation_steps"]),
@@ -111,7 +111,7 @@ def launch_optimized_training():
             "--num_workers", str(config["num_workers"]),
             "--save_interval", "10",
             "--log_interval", "5",
-            "--sample_interval", "500",
+            "--sample_interval", "100",
             "--experiment_name", "kaggle_vae_optimized"
         ]
     
