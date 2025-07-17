@@ -98,7 +98,7 @@ def launch_improved_training():
         "--block_out_channels", "128,256",                               # 2层通道配置
         "--layers_per_block", "1",                                       # 每层1个ResNet块 (标准配置)
         "--latent_channels", "4",                                        # 保持4通道
-        "--sample_size", "64",                                           # 关键: 设置sample_size为64
+        "--sample_size", "128",                                          # 修复: 设置sample_size为128匹配输入尺寸
     ]
     
     print(f"\n🏗️  现代化架构 (128×128 → 32×32):")

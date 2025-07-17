@@ -58,7 +58,7 @@ def test_new_architecture():
             up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D"],        # 2层
             block_out_channels=[128, 256],                                   # 2层通道数
             latent_channels=4,
-            sample_size=64,                                                  # 关键: 设置为64而不是128
+            sample_size=128,                                                 # 修复: 设置为128匹配输入尺寸
             layers_per_block=1,                                              # 标准配置
             act_fn="silu",
             norm_num_groups=32,
@@ -189,7 +189,7 @@ def test_new_architecture():
     print(f"     - 信息容量: 16倍提升")
     print(f"     - 压缩比: 4倍降低 (更好)")
     print(f"     - 缩放质量: Lanczos (最佳)")
-    print(f"     - 关键修复: sample_size=64 (确保正确下采样)")
+    print(f"     - 关键修复: sample_size=128 (匹配输入尺寸，确保正确下采样)")
     
     return True
 
