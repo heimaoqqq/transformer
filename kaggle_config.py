@@ -121,12 +121,26 @@ def setup_kaggle_environment():
     }
 
 def get_kaggle_train_command(stage="vae"):
-    """生成Kaggle训练命令"""
+    """生成Kaggle训练命令 (自动检测GPU数量)"""
+
+    # 检测GPU数量
+    import torch
+    gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+
+    # 根据GPU数量选择启动方式
+    if gpu_count > 1:
+        launch_cmd = f"accelerate launch --multi_gpu --num_processes={gpu_count}"
+        print(f"🚀 使用多GPU训练 ({gpu_count} GPUs)")
+    else:
+        launch_cmd = "python"
+        print(f"🚀 使用单GPU训练")
+
     if stage == "vae":
         config = KAGGLE_CONFIG["vae"]
         data_config = KAGGLE_CONFIG["data"]
-        
-        cmd = f"""python training/train_vae.py \\
+
+        # 使用动态启动命令
+        cmd = f"""{launch_cmd} training/train_vae.py \\
     --data_dir {KAGGLE_DATA_DIR} \\
     --output_dir {OUTPUT_DIR}/vae \\
     --batch_size {config['batch_size']} \\
@@ -143,15 +157,16 @@ def get_kaggle_train_command(stage="vae"):
     --log_interval {config['log_interval']} \\
     --sample_interval {config['sample_interval']} \\
     --experiment_name kaggle_vae"""
-        
+
         if data_config['use_augmentation']:
             cmd += " \\\n    --use_augmentation"
             
     elif stage == "diffusion":
         config = KAGGLE_CONFIG["diffusion"]
         data_config = KAGGLE_CONFIG["data"]
-        
-        cmd = f"""python training/train_diffusion.py \\
+
+        # 使用动态启动命令
+        cmd = f"""{launch_cmd} training/train_diffusion.py \\
     --data_dir {KAGGLE_DATA_DIR} \\
     --vae_path {OUTPUT_DIR}/vae/final_model \\
     --output_dir {OUTPUT_DIR}/diffusion \\
