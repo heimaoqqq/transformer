@@ -104,12 +104,13 @@ def launch_training(stage="vae"):
     print("Command:", " ".join(cmd1))
     
     try:
-        result = subprocess.run(cmd1, check=True)
+        # 使用实时输出，不重定向
+        result = subprocess.run(cmd1, check=True, text=True)
         print("✅ 训练完成")
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ accelerate launch 失败: {e}")
-        
+
         # 方法2: 使用torchrun (备用方案)
         print("\n🔄 尝试使用torchrun...")
         cmd2 = [
@@ -118,16 +119,17 @@ def launch_training(stage="vae"):
             "--master_port", "12355",
             script_path
         ] + script_args
-        
+
         print("Command:", " ".join(cmd2))
-        
+
         try:
-            result = subprocess.run(cmd2, check=True)
+            # 使用实时输出，不重定向
+            result = subprocess.run(cmd2, check=True, text=True)
             print("✅ 训练完成 (torchrun)")
             return True
         except subprocess.CalledProcessError as e2:
             print(f"❌ torchrun 也失败: {e2}")
-            
+
             # 方法3: 手动启动多进程 (最后方案)
             print("\n🔄 尝试手动多进程启动...")
             return launch_manual_multiprocess(script_path, script_args, gpu_count)
@@ -151,21 +153,23 @@ def launch_manual_multiprocess(script_path, script_args, gpu_count):
         
         print(f"启动进程 {rank}: {' '.join(cmd)}")
         
+        # 只重定向stderr，保持stdout实时输出
         process = subprocess.Popen(
             cmd,
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            text=True
         )
         processes.append(process)
-    
+
     # 等待所有进程完成
     success = True
     for i, process in enumerate(processes):
-        stdout, stderr = process.communicate()
+        _, stderr = process.communicate()
         if process.returncode != 0:
             print(f"❌ 进程 {i} 失败:")
-            print(stderr.decode())
+            if stderr:
+                print(stderr)
             success = False
         else:
             print(f"✅ 进程 {i} 完成")

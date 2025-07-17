@@ -233,9 +233,12 @@ def train_vae(args):
         epoch_loss = 0.0
         
         progress_bar = tqdm(
-            dataloader, 
+            dataloader,
             desc=f"Epoch {epoch+1}/{args.num_epochs}",
-            disable=not accelerator.is_local_main_process
+            disable=not accelerator.is_local_main_process,
+            dynamic_ncols=True,  # 动态调整进度条宽度
+            leave=True,          # 保留进度条
+            position=0           # 进度条位置
         )
         
         for step, batch in enumerate(progress_bar):
@@ -288,7 +291,14 @@ def train_vae(args):
                         "loss/freq": loss_dict['freq_loss'].item(),
                     }
                     
-                    progress_bar.set_postfix(loss=f"{avg_loss:.4f}")
+                    # 更新进度条显示
+                    progress_bar.set_postfix({
+                        'loss': f"{avg_loss:.4f}",
+                        'recon': f"{loss_dict['recon_loss'].item():.4f}",
+                        'kl': f"{loss_dict['kl_loss'].item():.6f}",
+                        'freq': f"{loss_dict['freq_loss'].item():.4f}",
+                        'lr': f"{lr_scheduler.get_last_lr()[0]:.2e}"
+                    })
                     
                     if args.use_wandb and accelerator.is_main_process:
                         wandb.log(logs, step=global_step)
