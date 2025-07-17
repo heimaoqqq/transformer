@@ -226,8 +226,10 @@ def train_diffusion(args):
                 
                 # VAE编码到潜在空间
                 with torch.no_grad():
-                    latents = vae.encode(images).latent_dist.sample()
-                    latents = latents * vae.config.scaling_factor
+                    # 在分布式训练中，需要通过.module访问原始模型
+                    vae_model = vae.module if hasattr(vae, 'module') else vae
+                    latents = vae_model.encode(images).latent_dist.sample()
+                    latents = latents * vae_model.config.scaling_factor
                 
                 # 添加噪声
                 noise = torch.randn_like(latents)
@@ -348,8 +350,9 @@ def validate_model(unet, condition_encoder, vae, noise_scheduler, val_dataloader
             user_indices = batch['user_idx']
             
             # VAE编码
-            latents = vae.encode(images).latent_dist.sample()
-            latents = latents * vae.config.scaling_factor
+            vae_model = vae.module if hasattr(vae, 'module') else vae
+            latents = vae_model.encode(images).latent_dist.sample()
+            latents = latents * vae_model.config.scaling_factor
             
             # 添加噪声
             noise = torch.randn_like(latents)
@@ -417,8 +420,9 @@ def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, ou
                 latents = ddim_scheduler.step(noise_pred, t, latents, return_dict=False)[0]
             
             # VAE解码
-            latents = latents / vae.config.scaling_factor
-            image = vae.decode(latents).sample
+            vae_model = vae.module if hasattr(vae, 'module') else vae
+            latents = latents / vae_model.config.scaling_factor
+            image = vae_model.decode(latents).sample
             
             # 转换为PIL图像
             image = (image / 2 + 0.5).clamp(0, 1)

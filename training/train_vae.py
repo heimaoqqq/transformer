@@ -243,10 +243,13 @@ def train_vae(args):
                 # 获取图像数据
                 images = batch['image']  # [B, C, H, W]
                 
-                # VAE前向传播
-                posterior = vae.encode(images).latent_dist
+                # VAE前向传播 (处理分布式训练)
+                # 在分布式训练中，需要通过.module访问原始模型
+                vae_model = vae.module if hasattr(vae, 'module') else vae
+
+                posterior = vae_model.encode(images).latent_dist
                 latents = posterior.sample()
-                reconstruction = vae.decode(latents).sample
+                reconstruction = vae_model.decode(latents).sample
                 
                 # 计算损失
                 loss_dict = loss_fn(reconstruction, images, posterior)
@@ -332,19 +335,24 @@ def save_checkpoint(model, optimizer, epoch, step, output_dir):
     """保存训练检查点"""
     checkpoint_dir = Path(output_dir) / "checkpoints"
     checkpoint_dir.mkdir(exist_ok=True)
-    
+
+    # 在分布式训练中，需要通过.module访问原始模型
+    model_to_save = model.module if hasattr(model, 'module') else model
+
     checkpoint = {
-        'model_state_dict': model.state_dict(),
+        'model_state_dict': model_to_save.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'epoch': epoch,
         'step': step,
     }
-    
+
     torch.save(checkpoint, checkpoint_dir / f"checkpoint_epoch_{epoch+1}.pt")
 
 def save_final_model(model, output_dir):
     """保存最终模型"""
-    model.save_pretrained(Path(output_dir) / "final_model")
+    # 在分布式训练中，需要通过.module访问原始模型
+    model_to_save = model.module if hasattr(model, 'module') else model
+    model_to_save.save_pretrained(Path(output_dir) / "final_model")
 
 def main():
     parser = argparse.ArgumentParser(description="Train VAE for Micro-Doppler Images")
