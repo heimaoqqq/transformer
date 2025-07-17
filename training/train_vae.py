@@ -158,22 +158,21 @@ def train_vae(args):
         )
     
     # 创建VAE模型
+    # 优化的VAE架构: 3层下采样 256→128→64→32
     vae = AutoencoderKL(
         in_channels=3,
         out_channels=3,
         down_block_types=[
-            "DownEncoderBlock2D",
-            "DownEncoderBlock2D", 
-            "DownEncoderBlock2D",
-            "DownEncoderBlock2D"
+            "DownEncoderBlock2D",  # 256→128
+            "DownEncoderBlock2D",  # 128→64
+            "DownEncoderBlock2D"   # 64→32
         ],
         up_block_types=[
-            "UpDecoderBlock2D",
-            "UpDecoderBlock2D",
-            "UpDecoderBlock2D",
-            "UpDecoderBlock2D"
+            "UpDecoderBlock2D",    # 32→64
+            "UpDecoderBlock2D",    # 64→128
+            "UpDecoderBlock2D"     # 128→256
         ],
-        block_out_channels=[128, 256, 512, 512],
+        block_out_channels=[128, 256, 512],  # 减少一层
         latent_channels=4,
         sample_size=args.resolution,
         layers_per_block=2,
