@@ -63,32 +63,49 @@ def create_directories():
 
 def main():
     print("🚀 开始设置微多普勒时频图数据增广项目环境")
-    
+
     # 检查Python版本
     if not check_python_version():
         return
-    
+
     # 创建目录结构
     create_directories()
-    
+
     # 升级pip
     run_command("python -m pip install --upgrade pip", "升级pip")
-    
-    # 安装依赖
-    if run_command("pip install -r requirements.txt", "安装Python依赖"):
-        print("✅ 所有依赖安装完成")
+
+    # 安装核心依赖
+    if run_command("pip install -r requirements.txt", "安装核心依赖"):
+        print("✅ 核心依赖安装完成")
     else:
         print("❌ 依赖安装失败，请检查网络连接和requirements.txt文件")
         return
-    
+
     # 检查CUDA
     check_cuda()
-    
+
+    # 运行兼容性测试
+    print("\n🧪 运行兼容性测试...")
+    test_result = run_command("python test_dependencies.py", "依赖兼容性测试")
+
+    if test_result:
+        print("✅ 兼容性测试通过")
+    else:
+        print("⚠️  兼容性测试失败，请检查错误信息")
+
+    # 询问是否安装可选依赖
+    print("\n📦 可选依赖安装")
+    install_optional = input("是否安装可选依赖 (评估工具、内存优化等)? (y/n): ").strip().lower()
+
+    if install_optional == 'y':
+        run_command("python install_optional_deps.py", "可选依赖安装")
+
     print("\n🎉 环境设置完成！")
     print("\n📋 下一步:")
-    print("1. 将您的微多普勒数据放入 data/ 目录")
-    print("2. 运行 VQ-VAE 训练: python training/train_vqvae.py")
-    print("3. 运行条件扩散训练: python training/train_diffusion.py")
+    print("1. 运行完整测试: python test_dependencies.py")
+    print("2. 运行Diffusers测试: python test_diffusers_compatibility.py")
+    print("3. 将您的微多普勒数据放入 data/ 目录")
+    print("4. 开始训练: python train_kaggle.py --stage all")
 
 if __name__ == "__main__":
     main()
