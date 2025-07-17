@@ -94,70 +94,90 @@ def simple_vae_training():
     
     # 5. 测试训练循环
     print("\n5️⃣ 开始训练循环...")
-    
+
     try:
         epoch = 1
-        max_steps = 10  # 只训练10步
-        
-        progress_bar = tqdm(
-            enumerate(dataloader), 
-            total=min(len(dataloader), max_steps),
-            desc=f"Epoch {epoch}",
-            dynamic_ncols=True
-        )
-        
-        for step, batch in progress_bar:
-            if step >= max_steps:
-                break
-                
-            print(f"\n🔄 步骤 {step+1}/{max_steps}")
-            
+        max_steps = 5  # 只训练5步
+
+        print(f"   📊 数据加载器长度: {len(dataloader)}")
+        print(f"   📊 最大步数: {max_steps}")
+
+        # 先测试数据迭代器
+        print("   🔄 测试数据迭代器...")
+        data_iter = iter(dataloader)
+
+        for step in range(max_steps):
+            print(f"\n   🔄 步骤 {step+1}/{max_steps}")
+
             # 获取数据
-            print("   📥 获取数据...")
-            images = batch['image'].to(device)
-            print(f"   ✅ 图像形状: {images.shape}")
-            
-            # 前向传播
-            print("   🔄 前向传播...")
-            start_time = time.time()
-            
+            print("      📥 获取批次数据...")
             try:
+                batch = next(data_iter)
+                print(f"      ✅ 数据获取成功: {batch['image'].shape}")
+            except StopIteration:
+                print("      ⚠️  数据迭代器结束")
+                break
+            except Exception as e:
+                print(f"      ❌ 数据获取失败: {e}")
+                break
+
+            # 移动到GPU
+            print("      📤 移动数据到GPU...")
+            images = batch['image'].to(device)
+            print(f"      ✅ 图像移动成功: {images.shape}")
+
+            # 前向传播
+            print("      🔄 前向传播...")
+            start_time = time.time()
+
+            try:
+                print("         🔄 VAE编码...")
                 posterior = vae.encode(images).latent_dist
                 latents = posterior.sample()
+                print(f"         ✅ 编码完成: {latents.shape}")
+
+                print("         🔄 VAE解码...")
                 reconstruction = vae.decode(latents).sample
-                
+                print(f"         ✅ 解码完成: {reconstruction.shape}")
+
                 forward_time = time.time() - start_time
-                print(f"   ✅ 前向传播完成 ({forward_time:.2f}s)")
-                
+                print(f"      ✅ 前向传播完成 ({forward_time:.2f}s)")
+
             except Exception as e:
-                print(f"   ❌ 前向传播失败: {e}")
+                print(f"      ❌ 前向传播失败: {e}")
+                import traceback
+                traceback.print_exc()
                 return False
-            
+
             # 计算损失
-            print("   📊 计算损失...")
-            recon_loss = mse_loss(reconstruction, images)
-            kl_loss = posterior.kl().mean()
-            total_loss = recon_loss + 1e-6 * kl_loss
-            
-            print(f"   ✅ 损失: {total_loss.item():.4f}")
-            
+            print("      📊 计算损失...")
+            try:
+                recon_loss = mse_loss(reconstruction, images)
+                kl_loss = posterior.kl().mean()
+                total_loss = recon_loss + 1e-6 * kl_loss
+
+                print(f"      ✅ 损失计算完成: {total_loss.item():.4f}")
+
+            except Exception as e:
+                print(f"      ❌ 损失计算失败: {e}")
+                return False
+
             # 反向传播
-            print("   🔄 反向传播...")
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
-            
-            print("   ✅ 反向传播完成")
-            
-            # 更新进度条
-            progress_bar.set_postfix({
-                'loss': f"{total_loss.item():.4f}",
-                'recon': f"{recon_loss.item():.4f}",
-                'kl': f"{kl_loss.item():.6f}"
-            })
-            
+            print("      🔄 反向传播...")
+            try:
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
+
+                print("      ✅ 反向传播完成")
+
+            except Exception as e:
+                print(f"      ❌ 反向传播失败: {e}")
+                return False
+
             # 清理内存
             torch.cuda.empty_cache()
+            print(f"      🧹 内存清理完成")
         
         print("\n🎉 简化训练完成!")
         return True
