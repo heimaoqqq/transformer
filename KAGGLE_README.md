@@ -11,6 +11,24 @@
 
 ## 🚀 快速开始
 
+### 0. 环境测试 (强烈推荐)
+
+在开始训练前，请先运行测试确保环境兼容：
+
+```bash
+# 1. 克隆项目
+!git clone https://github.com/heimaoqqq/VAE.git
+%cd VAE
+
+# 2. 运行完整环境测试
+!python test_kaggle_environment.py
+
+# 3. 或分步测试
+!python test_dependencies.py  # 依赖版本测试
+!python test_diffusers_compatibility.py  # API兼容性测试
+!python kaggle_config.py  # 数据集验证
+```
+
 ### 1. 一键训练 (推荐)
 
 ```bash
