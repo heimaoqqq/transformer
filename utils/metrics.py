@@ -354,17 +354,49 @@ class MetricsCalculator:
             'std_brightness': np.std(brightnesses),
         }
 
+# 独立函数，用于训练脚本
+def calculate_psnr(img1: np.ndarray, img2: np.ndarray) -> float:
+    """
+    计算PSNR (Peak Signal-to-Noise Ratio)
+
+    Args:
+        img1: 第一张图像 [H, W, C] 或 [H, W]
+        img2: 第二张图像 [H, W, C] 或 [H, W]
+
+    Returns:
+        PSNR值
+    """
+    return psnr(img1, img2, data_range=255)
+
+def calculate_ssim(img1: np.ndarray, img2: np.ndarray) -> float:
+    """
+    计算SSIM (Structural Similarity Index)
+
+    Args:
+        img1: 第一张图像 [H, W, C] 或 [H, W]
+        img2: 第二张图像 [H, W, C] 或 [H, W]
+
+    Returns:
+        SSIM值
+    """
+    if len(img1.shape) == 3:
+        # 多通道图像
+        return ssim(img1, img2, multichannel=True, data_range=255, channel_axis=2)
+    else:
+        # 单通道图像
+        return ssim(img1, img2, data_range=255)
+
 def load_images_from_directory(directory: Union[str, Path]) -> List[np.ndarray]:
     """从目录加载图像"""
     directory = Path(directory)
     images = []
-    
+
     for ext in ['*.png', '*.jpg', '*.jpeg', '*.bmp']:
         for img_path in directory.glob(ext):
             img = Image.open(img_path).convert('RGB')
             img_array = np.array(img)
             images.append(img_array)
-    
+
     return images
 
 def evaluate_model_performance(
