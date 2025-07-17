@@ -38,6 +38,15 @@ python check_vae.py --mode generate --num_samples 8
 python check_vae.py --mode generate --num_samples 8 --save_individual
 ```
 
+#### 5. 简单左右对比 (推荐)
+```bash
+# 生成简单的左右对比图：左边原始，右边重建
+python check_vae.py --mode simple --num_samples 8
+
+# 生成更多样本
+python check_vae.py --mode simple --num_samples 12
+```
+
 ## 📊 检查内容
 
 ### 训练状态检查
@@ -80,17 +89,19 @@ python check_vae.py --mode generate --num_samples 8 --save_individual
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--mode` | `full` | 检查模式：status/quick/full/latent/generate |
+| `--mode` | `full` | 检查模式：status/quick/full/latent/generate/simple |
 | `--output_dir` | `/kaggle/working/outputs` | 模型输出目录 |
 | `--data_dir` | `/kaggle/input/dataset` | 测试数据目录 |
 | `--num_samples` | `8` | 重建检查的样本数量 |
 | `--save_individual` | `False` | 是否保存单独的重建对比图 |
+| `--simple_layout` | `False` | 使用简单布局 (左原始右重建) |
 
 ## 📁 输出文件
 
 - `vae_reconstruction_comparison.png` - 详细重建对比图 (3行布局)
 - `vae_reconstruction_grid.png` - 网格重建对比图 (2行布局)
 - `reconstruction_samples/` - 单独的高质量对比图文件夹
+- `simple_comparisons/` - 简单左右对比图文件夹 ⭐**推荐**
 - 控制台输出 - 详细的检查报告和建议
 
 ## 💡 常见问题
