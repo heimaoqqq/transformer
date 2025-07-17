@@ -76,18 +76,27 @@ def run_command(command, description):
         print(f"❌ {description} failed with error: {e}")
         return False
 
-def train_vae():
+def train_vae(interactive=False):
     """训练VAE"""
     print("\n" + "="*50)
     print("🎯 Starting VAE Training")
     print("="*50)
-    
+
     # 检查是否已有VAE模型
     vae_model_path = Path(OUTPUT_DIR) / "vae" / "final_model"
     if vae_model_path.exists():
-        response = input("VAE model already exists. Continue training? (y/n): ")
-        if response.lower() != 'y':
-            print("Skipping VAE training")
+        if interactive:
+            try:
+                response = input("VAE model already exists. Continue training? (y/n): ")
+                if response.lower() != 'y':
+                    print("Skipping VAE training")
+                    return True
+            except (EOFError, KeyboardInterrupt):
+                print("⚠️  No input detected, using existing model...")
+                return True
+        else:
+            print("⚠️  VAE model already exists. Using existing model...")
+            print("   (Use --interactive flag to enable retraining option)")
             return True
     
     # 获取训练命令
@@ -108,24 +117,33 @@ def train_vae():
     
     return success
 
-def train_diffusion():
+def train_diffusion(interactive=False):
     """训练扩散模型"""
     print("\n" + "="*50)
     print("🎯 Starting Diffusion Training")
     print("="*50)
-    
+
     # 检查VAE模型是否存在
     vae_model_path = Path(OUTPUT_DIR) / "vae" / "final_model"
     if not vae_model_path.exists():
         print("❌ VAE model not found. Please train VAE first.")
         return False
-    
+
     # 检查是否已有扩散模型
     diffusion_model_path = Path(OUTPUT_DIR) / "diffusion" / "final_model"
     if diffusion_model_path.exists():
-        response = input("Diffusion model already exists. Continue training? (y/n): ")
-        if response.lower() != 'y':
-            print("Skipping diffusion training")
+        if interactive:
+            try:
+                response = input("Diffusion model already exists. Continue training? (y/n): ")
+                if response.lower() != 'y':
+                    print("Skipping diffusion training")
+                    return True
+            except (EOFError, KeyboardInterrupt):
+                print("⚠️  No input detected, using existing model...")
+                return True
+        else:
+            print("⚠️  Diffusion model already exists. Using existing model...")
+            print("   (Use --interactive flag to enable retraining option)")
             return True
     
     # 获取训练命令
@@ -213,6 +231,7 @@ def main():
         "setup", "vae", "diffusion", "generate", "all"
     ], default="all", help="Training stage to run")
     parser.add_argument("--skip_setup", action="store_true", help="Skip environment setup")
+    parser.add_argument("--interactive", action="store_true", help="Enable interactive mode (ask for confirmation)")
     
     args = parser.parse_args()
     
@@ -242,11 +261,21 @@ def main():
     # 估算训练时间
     if args.stage in ["all", "vae", "diffusion"]:
         estimate_training_time()
-        
-        response = input("\nProceed with training? (y/n): ")
-        if response.lower() != 'y':
-            print("Training cancelled")
-            return
+
+        # 根据模式决定是否需要确认
+        if args.interactive:
+            try:
+                response = input("\nProceed with training? (y/n): ")
+                if response.lower() != 'y':
+                    print("Training cancelled")
+                    return
+            except (EOFError, KeyboardInterrupt):
+                print("\n🚀 No input detected, starting training automatically...")
+        else:
+            print("\n🚀 Starting training automatically...")
+            print("   (Use --interactive flag to enable confirmation prompts)")
+            import time
+            time.sleep(2)
     
     # 执行指定阶段
     success = True
@@ -255,33 +284,33 @@ def main():
         print("✅ Setup completed")
         
     elif args.stage == "vae":
-        success = train_vae()
-        
+        success = train_vae(interactive=args.interactive)
+
     elif args.stage == "diffusion":
-        success = train_diffusion()
-        
+        success = train_diffusion(interactive=args.interactive)
+
     elif args.stage == "generate":
         success = generate_samples()
-        
+
     elif args.stage == "all":
         # 完整流程
         print("\n🎯 Running complete training pipeline...")
-        
+
         # VAE训练
-        if not train_vae():
+        if not train_vae(interactive=args.interactive):
             print("❌ VAE training failed")
             return
-        
+
         # 扩散训练
-        if not train_diffusion():
+        if not train_diffusion(interactive=args.interactive):
             print("❌ Diffusion training failed")
             return
-        
+
         # 生成样本
         if not generate_samples():
             print("❌ Sample generation failed")
             return
-        
+
         print("\n🎉 Complete pipeline finished successfully!")
     
     if success:
