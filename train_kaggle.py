@@ -43,12 +43,17 @@ def check_gpu():
 def run_command(command, description):
     """运行命令并处理输出"""
     print(f"\n🔄 {description}...")
-    print(f"Command: {command}")
-    
-    try:
+
+    # 支持字符串和列表两种格式
+    if isinstance(command, list):
+        cmd_parts = command
+        print(f"Command: {' '.join(command)}")
+    else:
         # 将命令分割为列表
         cmd_parts = command.replace(" \\\n", " ").split()
-        
+        print(f"Command: {command}")
+
+    try:
         # 运行命令
         process = subprocess.Popen(
             cmd_parts,
