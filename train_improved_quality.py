@@ -93,18 +93,19 @@ def launch_improved_training():
         "--sample_interval", "50",
 
         # 关键: 现代化架构参数 (128×128 → 32×32)
-        "--down_block_types", "DownEncoderBlock2D,DownEncoderBlock2D,DownEncoderBlock2D",  # 3层下采样: 128→64→32→16，然后调整到32
-        "--up_block_types", "UpDecoderBlock2D,UpDecoderBlock2D,UpDecoderBlock2D",        # 3层上采样: 16→32→64→128
-        "--block_out_channels", "128,256,256",                               # 3层通道配置
-        "--layers_per_block", "2",                                       # 每层2个ResNet块
+        "--down_block_types", "DownEncoderBlock2D,DownEncoderBlock2D",  # 2层下采样: 128→64→32
+        "--up_block_types", "UpDecoderBlock2D,UpDecoderBlock2D",        # 2层上采样: 32→64→128
+        "--block_out_channels", "128,256",                               # 2层通道配置
+        "--layers_per_block", "1",                                       # 每层1个ResNet块 (标准配置)
         "--latent_channels", "4",                                        # 保持4通道
+        "--sample_size", "64",                                           # 关键: 设置sample_size为64
     ]
     
     print(f"\n🏗️  现代化架构 (128×128 → 32×32):")
     print(f"   📐 输入: 128×128×3 = 49,152 像素")
-    print(f"   🔽 下采样: 128→64→32→16 (3层)")
-    print(f"   � 通道数: [128, 256, 256] (现代标准)")
-    print(f"   🧱 每层块数: 2 (增强特征提取)")
+    print(f"   🔽 下采样: 128→64→32 (2层)")
+    print(f"   � 通道数: [128, 256] (现代标准)")
+    print(f"   🧱 每层块数: 1 (标准配置)")
     print(f"   🎯 潜在空间: 32×32×4 = 4,096 维度")
     print(f"   📊 压缩比: 12:1 (vs 之前48:1)")
     print(f"   🖼️  缩放方法: Lanczos (现代高质量)")

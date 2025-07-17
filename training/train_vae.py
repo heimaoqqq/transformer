@@ -193,6 +193,9 @@ def train_vae(args):
     print(f"   🧱 每层块数: {args.layers_per_block}")
     print(f"   📈 通道数: {channels}")
 
+    # 确定sample_size参数
+    sample_size = args.sample_size if args.sample_size is not None else args.resolution
+
     vae = AutoencoderKL(
         in_channels=3,
         out_channels=3,
@@ -200,7 +203,7 @@ def train_vae(args):
         up_block_types=up_blocks,
         block_out_channels=channels,
         latent_channels=args.latent_channels,
-        sample_size=args.resolution,
+        sample_size=sample_size,
         layers_per_block=args.layers_per_block,
         act_fn="silu",
         norm_num_groups=32,
@@ -432,6 +435,7 @@ def main():
                        help="输出通道数 (逗号分隔)")
     parser.add_argument("--layers_per_block", type=int, default=1, help="每层块数")
     parser.add_argument("--latent_channels", type=int, default=4, help="潜在空间通道数")
+    parser.add_argument("--sample_size", type=int, default=None, help="VAE sample_size参数 (影响下采样行为)")
 
     # 系统参数
     parser.add_argument("--num_workers", type=int, default=4, help="数据加载器工作进程数")

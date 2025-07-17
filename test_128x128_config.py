@@ -50,16 +50,16 @@ def test_new_architecture():
     # 测试VAE架构
     print(f"\n🏗️  测试VAE架构 (128×128 → 32×32):")
     try:
-        # 新架构配置 (修正: 需要3层才能达到32×32)
+        # 新架构配置 (2层下采样: 128→64→32)
         vae = AutoencoderKL(
             in_channels=3,
             out_channels=3,
-            down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D"],  # 3层
-            up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D"],        # 3层
-            block_out_channels=[128, 256, 256],                                   # 3层通道数
+            down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D"],  # 2层
+            up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D"],        # 2层
+            block_out_channels=[128, 256],                                   # 2层通道数
             latent_channels=4,
-            sample_size=128,                                                 # 128×128输入
-            layers_per_block=2,                                              # 每层2个块
+            sample_size=64,                                                  # 关键: 设置为64而不是128
+            layers_per_block=1,                                              # 标准配置
             act_fn="silu",
             norm_num_groups=32,
             scaling_factor=0.18215,
@@ -189,6 +189,7 @@ def test_new_architecture():
     print(f"     - 信息容量: 16倍提升")
     print(f"     - 压缩比: 4倍降低 (更好)")
     print(f"     - 缩放质量: Lanczos (最佳)")
+    print(f"     - 关键修复: sample_size=64 (确保正确下采样)")
     
     return True
 
