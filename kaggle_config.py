@@ -129,7 +129,8 @@ def get_kaggle_train_command(stage="vae"):
 
     # 根据GPU数量选择启动方式
     if gpu_count > 1:
-        launch_cmd = f"accelerate launch --multi_gpu --num_processes={gpu_count}"
+        # 在Kaggle环境中使用特定的多GPU启动方式
+        launch_cmd = f"accelerate launch --config_file accelerate_config.yaml --num_processes={gpu_count}"
         print(f"🚀 使用多GPU训练 ({gpu_count} GPUs)")
     else:
         launch_cmd = "python"

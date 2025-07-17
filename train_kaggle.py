@@ -99,11 +99,15 @@ def train_vae(interactive=False):
             print("   (Use --interactive flag to enable retraining option)")
             return True
     
-    # 获取训练命令
-    command = get_kaggle_train_command("vae")
-    
-    # 运行训练
-    success = run_command(command, "VAE Training")
+    # 检查是否有多GPU，使用专用启动器
+    if torch.cuda.device_count() > 1:
+        print("🚀 检测到多GPU，使用专用启动器")
+        command = ["python", "launch_multi_gpu.py", "vae"]
+        success = run_command(command, "VAE Training (Multi-GPU)")
+    else:
+        # 单GPU使用原来的方式
+        command = get_kaggle_train_command("vae")
+        success = run_command(command, "VAE Training")
     
     if success:
         print("🎉 VAE training completed!")
@@ -146,11 +150,15 @@ def train_diffusion(interactive=False):
             print("   (Use --interactive flag to enable retraining option)")
             return True
     
-    # 获取训练命令
-    command = get_kaggle_train_command("diffusion")
-    
-    # 运行训练
-    success = run_command(command, "Diffusion Training")
+    # 检查是否有多GPU，使用专用启动器
+    if torch.cuda.device_count() > 1:
+        print("🚀 检测到多GPU，使用专用启动器")
+        command = ["python", "launch_multi_gpu.py", "diffusion"]
+        success = run_command(command, "Diffusion Training (Multi-GPU)")
+    else:
+        # 单GPU使用原来的方式
+        command = get_kaggle_train_command("diffusion")
+        success = run_command(command, "Diffusion Training")
     
     if success:
         print("🎉 Diffusion training completed!")
