@@ -35,7 +35,7 @@ from utils.metrics import calculate_psnr, calculate_ssim
 class MicroDopplerVAELoss(nn.Module):
     """微多普勒VAE损失函数"""
     
-    def __init__(self, kl_weight=1e-6, perceptual_weight=0.1, freq_weight=0.05):
+    def __init__(self, kl_weight=1e-4, perceptual_weight=1.0, freq_weight=0.1):
         super().__init__()
         self.kl_weight = kl_weight
         self.perceptual_weight = perceptual_weight
@@ -211,12 +211,18 @@ def train_vae(args):
         eps=1e-8
     )
     
-    # 创建学习率调度器
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=args.num_epochs,
-        eta_min=args.learning_rate * 0.1
-    )
+    # 创建学习率调度器 - 使用更稳定的策略
+    total_steps = len(dataloader) * args.num_epochs
+    warmup_steps = total_steps // 10  # 10% warmup
+
+    def lr_lambda(step):
+        if step < warmup_steps:
+            return step / warmup_steps
+        else:
+            progress = (step - warmup_steps) / (total_steps - warmup_steps)
+            return 0.5 * (1 + np.cos(np.pi * progress))
+
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     
     # 创建损失函数
     loss_fn = MicroDopplerVAELoss(

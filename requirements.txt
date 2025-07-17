@@ -29,10 +29,12 @@ tqdm==4.66.1
 tensorboard==2.15.1
 packaging==23.2
 
+# 感知损失 (VAE训练必需)
+lpips==0.1.4
+
 # 可选依赖
 # wandb==0.16.0  # 实验跟踪 (可选)
 # xformers==0.0.22  # 内存优化 (可选，需要CUDA)
-# lpips==0.1.4  # 感知损失 (可选)
 # pytorch-fid==0.3.0  # FID评估 (可选)
 
 # 开发工具 (可选)
