@@ -280,6 +280,10 @@ def train_vae(args):
                 if global_step % args.log_interval == 0:
                     avg_loss = epoch_loss / (step + 1)
                     
+                    # 安全获取损失值（处理tensor和float）
+                    def safe_item(value):
+                        return value.item() if hasattr(value, 'item') else value
+
                     logs = {
                         "epoch": epoch,
                         "step": global_step,
@@ -287,8 +291,8 @@ def train_vae(args):
                         "loss/total": loss_dict['total_loss'].item(),
                         "loss/recon": loss_dict['recon_loss'].item(),
                         "loss/kl": loss_dict['kl_loss'].item(),
-                        "loss/perceptual": loss_dict['perceptual_loss'].item(),
-                        "loss/freq": loss_dict['freq_loss'].item(),
+                        "loss/perceptual": safe_item(loss_dict['perceptual_loss']),
+                        "loss/freq": safe_item(loss_dict['freq_loss']),
                     }
                     
                     # 更新进度条显示
@@ -296,7 +300,7 @@ def train_vae(args):
                         'loss': f"{avg_loss:.4f}",
                         'recon': f"{loss_dict['recon_loss'].item():.4f}",
                         'kl': f"{loss_dict['kl_loss'].item():.6f}",
-                        'freq': f"{loss_dict['freq_loss'].item():.4f}",
+                        'freq': f"{safe_item(loss_dict['freq_loss']):.4f}",
                         'lr': f"{lr_scheduler.get_last_lr()[0]:.2e}"
                     })
                     
