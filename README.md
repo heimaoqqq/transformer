@@ -35,10 +35,10 @@
 # 2. 修复依赖 (如果需要)
 !python ultimate_fix_kaggle.py
 
-# 3. 安装感知损失库 (提升VAE质量)
+# 3. 设置感知损失 (自动安装LPIPS并启用感知损失)
 !python install_lpips.py
 
-# 4. VAE训练 (64×64分辨率，改进版)
+# 4. VAE训练 (64×64分辨率，高质量配置)
 !python train_celeba_standard.py
 
 # 5. 检查训练质量
@@ -144,7 +144,7 @@ python inference/generate.py \
 ## 🔧 故障排除
 
 1. **依赖冲突**: 运行 `python ultimate_fix_kaggle.py`
-2. **感知损失缺失**: 运行 `python install_lpips.py`
+2. **感知损失问题**: 运行 `python install_lpips.py` (自动处理)
 3. **CUDA内存不足**: 减小batch_size
 4. **VAE重建质量差**:
    - 确保感知损失已启用 (perceptual_weight=1.0)

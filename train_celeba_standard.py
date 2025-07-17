@@ -91,7 +91,7 @@ def launch_celeba_training():
         "--mixed_precision", config["mixed_precision"],
         "--gradient_accumulation_steps", str(config["gradient_accumulation"]),
         "--kl_weight", "1e-4",  # Stable Diffusion标准KL权重
-        "--perceptual_weight", "0.0",  # 启用感知损失 (Stable Diffusion标准)
+        "--perceptual_weight", "1.0",  # 启用感知损失 (Stable Diffusion标准)
         "--freq_weight", "0.1",  # 微多普勒特有，增强频域保持
         "--resolution", "64",  # CelebA标准分辨率
         "--num_workers", str(config["num_workers"]),
