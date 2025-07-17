@@ -21,7 +21,14 @@ import numpy as np
 
 # 导入自定义模块
 import sys
-sys.path.append('..')
+import os
+from pathlib import Path
+
+# 添加项目根目录到Python路径
+current_dir = Path(__file__).parent
+project_root = current_dir.parent
+sys.path.insert(0, str(project_root))
+
 from utils.data_loader import MicroDopplerDataset
 from utils.metrics import calculate_psnr, calculate_ssim
 
