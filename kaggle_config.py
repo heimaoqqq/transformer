@@ -27,7 +27,7 @@ KAGGLE_CONFIG = {
         "mixed_precision": "fp16",
         "gradient_accumulation_steps": 2,  # 双GPU下减少梯度累积
         "kl_weight": 1e-6,
-        "perceptual_weight": 0.05,  # 启用轻量感知损失
+        "perceptual_weight": 0.0,   # 禁用感知损失(LPIPS不可用)
         "freq_weight": 0.05,
         "resolution": 256,  # 恢复原始分辨率
         "num_workers": 2,  # 双GPU可以使用更多worker
