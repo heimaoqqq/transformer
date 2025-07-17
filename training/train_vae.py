@@ -109,18 +109,37 @@ def train_vae(args):
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
 
-    # 清理GPU缓存
+    # 检查GPU配置
     if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        print(f"🎮 GPU内存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+        gpu_count = torch.cuda.device_count()
+        print(f"🎮 检测到 {gpu_count} 个GPU")
 
-    # 初始化加速器
+        for i in range(gpu_count):
+            gpu_props = torch.cuda.get_device_properties(i)
+            gpu_memory = gpu_props.total_memory / 1024**3
+            print(f"   GPU {i}: {gpu_props.name} - {gpu_memory:.1f} GB")
+            torch.cuda.empty_cache()
+
+        # 如果有多个GPU，确保使用所有GPU
+        if gpu_count > 1:
+            print(f"✅ 将使用所有 {gpu_count} 个GPU进行训练")
+        else:
+            print("⚠️  只检测到1个GPU，可能需要检查GPU配置")
+    else:
+        print("❌ 未检测到GPU")
+
+    # 初始化加速器 (自动检测多GPU)
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
         log_with="wandb" if args.use_wandb else None,
         project_dir=args.output_dir
     )
+
+    # 打印实际使用的设备信息
+    print(f"🚀 训练设备: {accelerator.device}")
+    print(f"🔢 进程数: {accelerator.num_processes}")
+    print(f"📊 是否分布式: {accelerator.distributed_type}")
     
     # 设置随机种子
     if args.seed is not None:
