@@ -365,26 +365,41 @@ def train_vae(args):
         print(f"Training completed! Model saved to {args.output_dir}")
 
 def save_sample_images(original, reconstruction, output_dir, step):
-    """保存样本图像"""
+    """保存样本图像 (只保留最近10个)"""
     import torchvision.utils as vutils
-    
+
     # 拼接原图和重建图
     comparison = torch.cat([original, reconstruction], dim=0)
-    
+
     # 保存图像
     sample_dir = Path(output_dir) / "samples"
     sample_dir.mkdir(exist_ok=True)
-    
+
+    # 新样本文件名
+    new_sample_path = sample_dir / f"step_{step:06d}.png"
+
+    # 保存新样本
     vutils.save_image(
         comparison,
-        sample_dir / f"step_{step:06d}.png",
+        new_sample_path,
         nrow=4,
         normalize=True,
         value_range=(0, 1)
     )
 
+    # 只保留最近10个样本文件 (节省空间)
+    try:
+        sample_files = sorted(sample_dir.glob("step_*.png"))
+        if len(sample_files) > 10:
+            # 删除最旧的文件
+            for old_file in sample_files[:-10]:
+                old_file.unlink()
+                print(f"🗑️  删除旧样本: {old_file.name}")
+    except Exception as e:
+        print(f"⚠️  清理旧样本时出错: {e}")
+
 def save_checkpoint(model, optimizer, epoch, step, output_dir):
-    """保存训练检查点"""
+    """保存训练检查点 (只保留最新的1个)"""
     checkpoint_dir = Path(output_dir) / "checkpoints"
     checkpoint_dir.mkdir(exist_ok=True)
 
@@ -398,7 +413,21 @@ def save_checkpoint(model, optimizer, epoch, step, output_dir):
         'step': step,
     }
 
-    torch.save(checkpoint, checkpoint_dir / f"checkpoint_epoch_{epoch+1}.pt")
+    # 新检查点文件名
+    new_checkpoint_path = checkpoint_dir / f"checkpoint_epoch_{epoch+1}.pt"
+
+    # 删除旧的检查点文件 (保留最新1个)
+    try:
+        for old_checkpoint in checkpoint_dir.glob("checkpoint_epoch_*.pt"):
+            if old_checkpoint != new_checkpoint_path:
+                old_checkpoint.unlink()
+                print(f"🗑️  删除旧检查点: {old_checkpoint.name}")
+    except Exception as e:
+        print(f"⚠️  删除旧检查点时出错: {e}")
+
+    # 保存新检查点
+    torch.save(checkpoint, new_checkpoint_path)
+    print(f"💾 保存检查点: {new_checkpoint_path.name}")
 
 def save_final_model(model, output_dir):
     """保存最终模型"""

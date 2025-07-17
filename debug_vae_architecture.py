@@ -10,7 +10,13 @@ def test_vae_downsampling():
     """测试不同配置的VAE下采样行为"""
     print("🔍 调试VAE架构下采样行为")
     print("=" * 60)
-    
+    print("📚 基础概念:")
+    print("   - 下采样 = 减少图像尺寸")
+    print("   - 每个DownEncoderBlock2D进行1次下采样(2倍压缩)")
+    print("   - n层DownEncoderBlock2D理论上应该实现2^n倍压缩")
+    print("   - 但实际情况可能不同，让我们验证一下...")
+    print()
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     # 测试配置1: 当前配置 (2层DownEncoderBlock2D)
@@ -38,7 +44,11 @@ def test_vae_downsampling():
         print(f"   输入: {test_input.shape}")
         print(f"   潜在: {latent.shape}")
         print(f"   重建: {reconstructed.shape}")
-        print(f"   下采样因子: {128 // latent.shape[-1]}")
+        actual_factor = 128 // latent.shape[-1]
+        expected_factor = 2 ** 2  # 2层应该是4倍
+        print(f"   实际下采样因子: {actual_factor}倍 (128→{latent.shape[-1]})")
+        print(f"   理论下采样因子: {expected_factor}倍")
+        print(f"   ✅ 符合预期" if actual_factor == expected_factor else f"   ❌ 不符合预期")
         
     except Exception as e:
         print(f"   ❌ 配置1失败: {e}")
@@ -68,7 +78,11 @@ def test_vae_downsampling():
         print(f"   输入: {test_input.shape}")
         print(f"   潜在: {latent.shape}")
         print(f"   重建: {reconstructed.shape}")
-        print(f"   下采样因子: {128 // latent.shape[-1]}")
+        actual_factor = 128 // latent.shape[-1]
+        expected_factor = 2 ** 3  # 3层应该是8倍
+        print(f"   实际下采样因子: {actual_factor}倍 (128→{latent.shape[-1]})")
+        print(f"   理论下采样因子: {expected_factor}倍")
+        print(f"   ✅ 符合预期" if actual_factor == expected_factor else f"   ❌ 不符合预期")
         
     except Exception as e:
         print(f"   ❌ 配置2失败: {e}")
