@@ -50,15 +50,15 @@ def test_new_architecture():
     # 测试VAE架构
     print(f"\n🏗️  测试VAE架构 (128×128 → 32×32):")
     try:
-        # 新架构配置 (2层下采样: 128→64→32)
+        # 修复架构配置 (3层下采样: 128→64→32→16，实际得到32×32)
         vae = AutoencoderKL(
             in_channels=3,
             out_channels=3,
-            down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D"],  # 2层
-            up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D"],        # 2层
-            block_out_channels=[128, 256],                                   # 2层通道数
+            down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D"],  # 3层
+            up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D"],        # 3层
+            block_out_channels=[128, 256, 512],                                                   # 3层通道数
             latent_channels=4,
-            sample_size=128,                                                 # 修复: 设置为128匹配输入尺寸
+            sample_size=128,                                                 # 设置为128匹配输入尺寸
             layers_per_block=1,                                              # 标准配置
             act_fn="silu",
             norm_num_groups=32,
@@ -182,14 +182,14 @@ def test_new_architecture():
     print(f"     - 输入: 128×128×3 = 49,152 像素")
     print(f"     - 潜在: 32×32×4 = 4,096 维度")
     print(f"     - 压缩比: 12:1")
-    print(f"     - 通道: [128, 256]")
+    print(f"     - 通道: [128, 256, 512]")
     
     print(f"   改进:")
     print(f"     - 输入分辨率: 4倍提升")
     print(f"     - 信息容量: 16倍提升")
     print(f"     - 压缩比: 4倍降低 (更好)")
     print(f"     - 缩放质量: Lanczos (最佳)")
-    print(f"     - 关键修复: sample_size=128 (匹配输入尺寸，确保正确下采样)")
+    print(f"     - 关键修复: 3层DownEncoderBlock2D (确保128→32下采样)")
     
     return True
 
