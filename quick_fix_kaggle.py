@@ -31,17 +31,21 @@ def quick_fix():
     run_pip("install torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu121", 
             "安装PyTorch 2.1.0")
     
-    # 2. 安装核心依赖
+    # 2. 安装核心依赖 (指定兼容版本)
     print("\n2️⃣ 安装核心依赖...")
+
+    # 先安装兼容的huggingface_hub
+    run_pip("install 'huggingface_hub>=0.20.0,<0.25.0'", "安装兼容的 huggingface_hub")
+
+    # 然后安装其他包
     packages = [
-        "diffusers",
-        "transformers", 
-        "accelerate",
-        "huggingface_hub",
+        "diffusers>=0.27.0",
+        "transformers>=4.35.0",
+        "accelerate>=0.24.0",
         "einops",
         "opencv-python"
     ]
-    
+
     for package in packages:
         run_pip(f"install {package}", f"安装 {package}")
     
