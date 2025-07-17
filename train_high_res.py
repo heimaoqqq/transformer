@@ -55,23 +55,23 @@ def launch_high_res_training():
             "training/train_vae.py",
             "--data_dir", "/kaggle/input/dataset",
             "--output_dir", "/kaggle/working/outputs/vae",
-            "--batch_size", "6",        # 双GPU总共6个样本
+            "--batch_size", "4",        # 双GPU总共4个样本 (保守)
             "--num_epochs", "40",       # 充分训练
             "--learning_rate", "0.0001",
             "--mixed_precision", "fp16",
-            "--gradient_accumulation_steps", "2",
+            "--gradient_accumulation_steps", "4",
             "--kl_weight", "1e-6",
             "--perceptual_weight", "0.0",  # 暂时禁用感知损失
             "--freq_weight", "0.05",
             "--resolution", "256",      # 高分辨率
-            "--num_workers", "2",       # 多线程数据加载
+            "--num_workers", "1",       # 减少线程数节省内存
             "--save_interval", "10",
             "--log_interval", "5",
             "--sample_interval", "100", # 正常采样频率
             "--experiment_name", "kaggle_vae_256"
         ]
         
-        print(f"📊 配置: batch_size=6 (每GPU 3个), resolution=256×256")
+        print(f"📊 配置: batch_size=4 (每GPU 2个), resolution=256×256")
         
     else:
         print("🚀 启动单GPU高分辨率训练 (256×256)...")
@@ -81,23 +81,23 @@ def launch_high_res_training():
             "training/train_vae.py",
             "--data_dir", "/kaggle/input/dataset",
             "--output_dir", "/kaggle/working/outputs/vae",
-            "--batch_size", "4",        # 单GPU 4个样本
+            "--batch_size", "2",        # 单GPU 2个样本 (保守)
             "--num_epochs", "40",
             "--learning_rate", "0.0001",
             "--mixed_precision", "fp16",
-            "--gradient_accumulation_steps", "4",
+            "--gradient_accumulation_steps", "8",
             "--kl_weight", "1e-6",
             "--perceptual_weight", "0.0",
             "--freq_weight", "0.05",
             "--resolution", "256",
-            "--num_workers", "2",
+            "--num_workers", "1",
             "--save_interval", "10",
             "--log_interval", "5",
             "--sample_interval", "100",
             "--experiment_name", "kaggle_vae_256"
         ]
         
-        print(f"📊 配置: batch_size=4, resolution=256×256")
+        print(f"📊 配置: batch_size=2, resolution=256×256")
     
     print(f"Command: {' '.join(cmd)}")
     print("=" * 80)
