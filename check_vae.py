@@ -115,15 +115,15 @@ class VAEChecker:
             print(f"❌ 模型加载失败: {e}")
             return None, None
     
-    def check_reconstruction_quality(self, vae=None, num_samples=6):
+    def check_reconstruction_quality(self, vae=None, num_samples=8):
         """检查重建质量"""
-        print(f"\n🎨 重建质量检查")
-        
+        print(f"\n🎨 重建质量检查 ({num_samples} 张图像)")
+
         if vae is None:
             vae, _ = self.test_model_loading()
             if vae is None:
                 return None
-        
+
         try:
             # 创建测试数据
             dataset = MicroDopplerDataset(
@@ -132,55 +132,83 @@ class VAEChecker:
                 augment=False,
                 split="test"
             )
-            
+
             print(f"📊 测试数据: {len(dataset)} 张图像")
-            
+
             # 随机选择样本
             indices = torch.randperm(len(dataset))[:num_samples]
-            
-            # 重建图像
-            fig, axes = plt.subplots(3, num_samples, figsize=(num_samples * 2.5, 7.5))
-            
+
+            # 创建更大的图像网格
+            fig, axes = plt.subplots(3, num_samples, figsize=(num_samples * 2, 6))
+
+            # 如果只有一个样本，确保axes是2D数组
+            if num_samples == 1:
+                axes = axes.reshape(3, 1)
+
             mse_scores = []
-            
+            psnr_scores = []
+
+            print(f"🔄 正在重建 {num_samples} 张图像...")
+
             with torch.no_grad():
                 for i, idx in enumerate(indices):
                     # 获取原始图像
                     sample = dataset[idx]
                     original = sample['image'].unsqueeze(0).to(self.device)
-                    
+                    user_id = sample.get('user_id', 'N/A')
+
                     # VAE重建
                     posterior = vae.encode(original).latent_dist
                     latent = posterior.sample()
                     reconstructed = vae.decode(latent).sample
-                    
+
                     # 转换为numpy
                     orig_np = original.squeeze().cpu().numpy().transpose(1, 2, 0)
                     recon_np = reconstructed.squeeze().cpu().numpy().transpose(1, 2, 0)
-                    
+
+                    # 确保数值范围在[0,1]
+                    orig_np = np.clip(orig_np, 0, 1)
+                    recon_np = np.clip(recon_np, 0, 1)
+
                     # 计算指标
                     mse = np.mean((orig_np - recon_np) ** 2)
+                    psnr = 20 * np.log10(1.0 / np.sqrt(mse)) if mse > 0 else float('inf')
                     mse_scores.append(mse)
-                    
-                    # 显示图像
-                    axes[0, i].imshow(np.clip(orig_np, 0, 1))
-                    axes[0, i].set_title(f'原始 {i+1}')
+                    psnr_scores.append(psnr)
+
+                    # 显示原始图像
+                    axes[0, i].imshow(orig_np)
+                    axes[0, i].set_title(f'原始 {i+1}\nUser: {user_id}', fontsize=10)
                     axes[0, i].axis('off')
-                    
-                    axes[1, i].imshow(np.clip(recon_np, 0, 1))
-                    axes[1, i].set_title(f'重建 {i+1}')
+
+                    # 显示重建图像
+                    axes[1, i].imshow(recon_np)
+                    axes[1, i].set_title(f'重建 {i+1}\nPSNR: {psnr:.1f}dB', fontsize=10)
                     axes[1, i].axis('off')
-                    
-                    # 差异图
+
+                    # 差异图 (热力图)
                     diff = np.abs(orig_np - recon_np)
-                    axes[2, i].imshow(diff, cmap='hot')
-                    axes[2, i].set_title(f'差异 {i+1}')
+                    # 转换为灰度用于热力图
+                    diff_gray = np.mean(diff, axis=2)
+                    im = axes[2, i].imshow(diff_gray, cmap='hot', vmin=0, vmax=0.3)
+                    axes[2, i].set_title(f'差异 {i+1}\nMSE: {mse:.4f}', fontsize=10)
                     axes[2, i].axis('off')
-            
+
+                    print(f"   ✅ 样本 {i+1}: PSNR={psnr:.1f}dB, MSE={mse:.4f}")
+
+            # 添加颜色条
+            plt.colorbar(im, ax=axes[2, :], orientation='horizontal',
+                        fraction=0.05, pad=0.1, label='重建误差')
+
+            plt.suptitle(f'VAE重建质量检查 - {num_samples} 张微多普勒图像', fontsize=14, y=0.98)
             plt.tight_layout()
-            save_path = "/kaggle/working/vae_reconstruction_check.png"
-            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+
+            # 保存高质量图像
+            save_path = "/kaggle/working/vae_reconstruction_comparison.png"
+            plt.savefig(save_path, dpi=200, bbox_inches='tight', facecolor='white')
             plt.show()
+
+            print(f"✅ 重建对比图已保存: {save_path}")
             
             # 计算总体指标
             avg_mse = np.mean(mse_scores)
@@ -331,17 +359,136 @@ class VAEChecker:
         except Exception as e:
             print(f"❌ 潜在空间分析失败: {e}")
 
+    def generate_reconstruction_grid(self, vae=None, num_samples=8, save_individual=True):
+        """生成重建图像网格，可选择保存单独图像"""
+        print(f"\n🖼️  生成重建图像网格 ({num_samples} 张)")
+
+        if vae is None:
+            vae, _ = self.test_model_loading()
+            if vae is None:
+                return None
+
+        try:
+            dataset = MicroDopplerDataset(
+                data_dir=self.data_dir,
+                resolution=64,
+                augment=False,
+                split="test"
+            )
+
+            # 随机选择样本
+            indices = torch.randperm(len(dataset))[:num_samples]
+
+            # 创建输出目录
+            output_dir = Path("/kaggle/working/reconstruction_samples")
+            output_dir.mkdir(exist_ok=True)
+
+            # 生成大网格图
+            fig, axes = plt.subplots(2, num_samples, figsize=(num_samples * 2.5, 5))
+            if num_samples == 1:
+                axes = axes.reshape(2, 1)
+
+            all_metrics = []
+
+            with torch.no_grad():
+                for i, idx in enumerate(indices):
+                    sample = dataset[idx]
+                    original = sample['image'].unsqueeze(0).to(self.device)
+                    user_id = sample.get('user_id', f'sample_{idx}')
+
+                    # VAE重建
+                    posterior = vae.encode(original).latent_dist
+                    latent = posterior.sample()
+                    reconstructed = vae.decode(latent).sample
+
+                    # 转换为numpy
+                    orig_np = original.squeeze().cpu().numpy().transpose(1, 2, 0)
+                    recon_np = reconstructed.squeeze().cpu().numpy().transpose(1, 2, 0)
+                    orig_np = np.clip(orig_np, 0, 1)
+                    recon_np = np.clip(recon_np, 0, 1)
+
+                    # 计算指标
+                    mse = np.mean((orig_np - recon_np) ** 2)
+                    psnr = 20 * np.log10(1.0 / np.sqrt(mse)) if mse > 0 else float('inf')
+                    all_metrics.append({'mse': mse, 'psnr': psnr, 'user_id': user_id})
+
+                    # 网格图显示
+                    axes[0, i].imshow(orig_np)
+                    axes[0, i].set_title(f'原始-{i+1}\nUser: {user_id}', fontsize=9)
+                    axes[0, i].axis('off')
+
+                    axes[1, i].imshow(recon_np)
+                    axes[1, i].set_title(f'重建-{i+1}\nPSNR: {psnr:.1f}dB', fontsize=9)
+                    axes[1, i].axis('off')
+
+                    # 保存单独的对比图
+                    if save_individual:
+                        fig_single, axes_single = plt.subplots(1, 3, figsize=(12, 4))
+
+                        # 原始图像
+                        axes_single[0].imshow(orig_np)
+                        axes_single[0].set_title(f'原始图像\nUser: {user_id}', fontsize=12)
+                        axes_single[0].axis('off')
+
+                        # 重建图像
+                        axes_single[1].imshow(recon_np)
+                        axes_single[1].set_title(f'重建图像\nPSNR: {psnr:.1f}dB', fontsize=12)
+                        axes_single[1].axis('off')
+
+                        # 差异图
+                        diff = np.abs(orig_np - recon_np)
+                        diff_gray = np.mean(diff, axis=2)
+                        im = axes_single[2].imshow(diff_gray, cmap='hot', vmin=0, vmax=0.3)
+                        axes_single[2].set_title(f'重建误差\nMSE: {mse:.4f}', fontsize=12)
+                        axes_single[2].axis('off')
+
+                        plt.colorbar(im, ax=axes_single[2], fraction=0.046, pad=0.04)
+                        plt.suptitle(f'VAE重建对比 - 样本 {i+1}', fontsize=14)
+                        plt.tight_layout()
+
+                        single_path = output_dir / f"reconstruction_sample_{i+1}_user_{user_id}.png"
+                        plt.savefig(single_path, dpi=150, bbox_inches='tight', facecolor='white')
+                        plt.close(fig_single)
+
+                        print(f"   💾 保存单独图像: {single_path.name}")
+
+            # 保存网格图
+            plt.suptitle(f'VAE重建质量网格 - {num_samples} 张微多普勒图像', fontsize=14)
+            plt.tight_layout()
+
+            grid_path = "/kaggle/working/vae_reconstruction_grid.png"
+            plt.savefig(grid_path, dpi=200, bbox_inches='tight', facecolor='white')
+            plt.show()
+
+            # 统计总结
+            avg_psnr = np.mean([m['psnr'] for m in all_metrics])
+            avg_mse = np.mean([m['mse'] for m in all_metrics])
+
+            print(f"\n📊 生成总结:")
+            print(f"   🖼️  网格图: {grid_path}")
+            print(f"   📁 单独图像: {output_dir} ({num_samples} 张)")
+            print(f"   📈 平均PSNR: {avg_psnr:.2f} dB")
+            print(f"   📉 平均MSE: {avg_mse:.6f}")
+
+            return all_metrics
+
+        except Exception as e:
+            print(f"❌ 图像生成失败: {e}")
+            return None
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="VAE检查工具")
-    parser.add_argument("--mode", choices=["status", "quick", "full", "latent"], default="full",
-                       help="检查模式: status(状态), quick(快速), full(完整), latent(潜在空间)")
+    parser.add_argument("--mode", choices=["status", "quick", "full", "latent", "generate"], default="full",
+                       help="检查模式: status(状态), quick(快速), full(完整), latent(潜在空间), generate(生成图像)")
     parser.add_argument("--output_dir", default="/kaggle/working/outputs",
                        help="输出目录路径")
     parser.add_argument("--data_dir", default="/kaggle/input/dataset",
                        help="数据目录路径")
-    parser.add_argument("--num_samples", type=int, default=6,
+    parser.add_argument("--num_samples", type=int, default=8,
                        help="重建检查的样本数量")
+    parser.add_argument("--save_individual", action="store_true",
+                       help="是否保存单独的重建对比图")
     
     args = parser.parse_args()
     
@@ -355,6 +502,10 @@ def main():
             checker.check_reconstruction_quality(vae, args.num_samples)
     elif args.mode == "latent":
         checker.analyze_latent_space()
+    elif args.mode == "generate":
+        vae, _ = checker.test_model_loading()
+        if vae:
+            checker.generate_reconstruction_grid(vae, args.num_samples, args.save_individual)
     else:  # full
         checker.full_check()
 

@@ -29,6 +29,15 @@ python check_vae.py --mode quick --num_samples 8
 python check_vae.py --mode latent
 ```
 
+#### 4. 生成重建图像网格
+```bash
+# 生成8张重建对比图
+python check_vae.py --mode generate --num_samples 8
+
+# 生成并保存单独的对比图
+python check_vae.py --mode generate --num_samples 8 --save_individual
+```
+
 ## 📊 检查内容
 
 ### 训练状态检查
@@ -52,6 +61,12 @@ python check_vae.py --mode latent
 - ✅ 各通道的分布情况
 - ✅ 验证编码器的有效性
 
+### 重建图像生成
+- ✅ 生成多张重建对比图
+- ✅ 创建网格布局展示
+- ✅ 保存单独的高质量对比图
+- ✅ 包含差异热力图分析
+
 ## 📈 质量评估标准
 
 | PSNR值 | 质量评估 | 相关系数 | 说明 |
@@ -65,14 +80,17 @@ python check_vae.py --mode latent
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--mode` | `full` | 检查模式：status/quick/full/latent |
+| `--mode` | `full` | 检查模式：status/quick/full/latent/generate |
 | `--output_dir` | `/kaggle/working/outputs` | 模型输出目录 |
 | `--data_dir` | `/kaggle/input/dataset` | 测试数据目录 |
-| `--num_samples` | `6` | 重建检查的样本数量 |
+| `--num_samples` | `8` | 重建检查的样本数量 |
+| `--save_individual` | `False` | 是否保存单独的重建对比图 |
 
 ## 📁 输出文件
 
-- `vae_reconstruction_check.png` - 重建对比图
+- `vae_reconstruction_comparison.png` - 详细重建对比图 (3行布局)
+- `vae_reconstruction_grid.png` - 网格重建对比图 (2行布局)
+- `reconstruction_samples/` - 单独的高质量对比图文件夹
 - 控制台输出 - 详细的检查报告和建议
 
 ## 💡 常见问题
