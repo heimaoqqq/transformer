@@ -19,21 +19,21 @@ IMAGE_SIZE = 256
 
 # 训练配置 (针对Kaggle环境优化)
 KAGGLE_CONFIG = {
-    # VAE训练配置 (双GPU优化 - 256分辨率，保守批次)
+    # VAE训练配置 (GPU自适应)
     "vae": {
-        "batch_size": 4,  # 每GPU 2个样本，总共4个 (减小批次)
-        "num_epochs": 40,  # 恢复正常训练轮数
-        "learning_rate": 1e-4,
-        "mixed_precision": "fp16",
-        "gradient_accumulation_steps": 4,  # 增加梯度累积保持有效批次大小
+        "batch_size": 8,  # P100内存大，可以用更大批次
+        "num_epochs": 30,
+        "learning_rate": 2e-4,  # 配合大批次提高学习率
+        "mixed_precision": "no",  # P100用FP32，T4用FP16
+        "gradient_accumulation_steps": 1,  # P100性能强，不需要累积
         "kl_weight": 1e-6,
-        "perceptual_weight": 0.0,   # 禁用感知损失节省内存
+        "perceptual_weight": 0.0,
         "freq_weight": 0.05,
-        "resolution": 256,  # 保持256分辨率
-        "num_workers": 1,  # 减少worker数节省内存
-        "save_interval": 10,
-        "log_interval": 5,
-        "sample_interval": 100,  # 恢复正常采样频率
+        "resolution": 256,
+        "num_workers": 4,  # P100可以用更多worker
+        "save_interval": 5,
+        "log_interval": 2,
+        "sample_interval": 50,
     },
     
     # 扩散训练配置
