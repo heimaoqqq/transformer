@@ -175,33 +175,13 @@ def install_pytorch_stack():
 
     return True
 
-def check_and_fix_compatibility():
-    """检查并修复兼容性问题"""
-    print("\n🔍 检查兼容性问题")
-    print("=" * 30)
-
-    # 检查 cached_download 问题
-    try:
-        from huggingface_hub import cached_download
-        print("✅ cached_download 可用")
-        return True
-    except ImportError:
-        print("❌ 发现 cached_download 兼容性问题")
-        print("🔧 将安装兼容版本组合...")
-        return False
-    except Exception as e:
-        print(f"⚠️  其他导入问题: {e}")
-        return False
-
 def install_ai_packages():
-    """安装AI相关包"""
+    """安装AI相关包 - 强制使用兼容版本组合"""
     print("\n🤖 安装AI相关包")
     print("=" * 30)
 
-    # 检查是否需要修复兼容性
-    needs_fix = not check_and_fix_compatibility()
-
-    # 经过验证的稳定版本组合 - 确保与原项目完全一致
+    # 强制使用经过验证的稳定版本组合 - 确保与原项目完全一致
+    # 这些版本经过测试，解决了 cached_download 兼容性问题
     ai_packages = [
         ("huggingface_hub==0.16.4", "HuggingFace Hub"),  # 包含 cached_download，与diffusers兼容
         ("transformers==4.30.2", "Transformers"),        # 稳定版本，支持所有功能
@@ -209,23 +189,47 @@ def install_ai_packages():
         ("accelerate==0.20.3", "Accelerate")             # 稳定版本，支持混合精度训练
     ]
 
-    if needs_fix:
-        print("🔧 安装兼容版本组合以修复问题...")
+    print("🔧 强制安装兼容版本组合以确保稳定性...")
 
     success_count = 0
     for package, name in ai_packages:
-        if run_command(f"pip install {package}", f"安装 {name}"):
+        # 先尝试强制重装以确保版本正确
+        if run_command(f"pip install --force-reinstall {package}", f"强制安装 {name}"):
             success_count += 1
         else:
-            # 如果失败，尝试强制重装
-            print(f"   ⚠️  {name} 安装失败，尝试强制重装...")
-            if run_command(f"pip install --force-reinstall {package}", f"强制重装 {name}"):
+            # 如果强制重装失败，尝试普通安装
+            print(f"   ⚠️  {name} 强制安装失败，尝试普通安装...")
+            if run_command(f"pip install {package}", f"安装 {name}"):
                 success_count += 1
             else:
                 print(f"   ❌ {name} 安装失败")
 
     print(f"\n📊 AI包安装结果: {success_count}/{len(ai_packages)} 成功")
-    return success_count == len(ai_packages)
+
+    # 验证关键兼容性
+    print("\n🔍 验证关键兼容性...")
+    try:
+        from huggingface_hub import cached_download
+        print("✅ cached_download 验证成功")
+        return True
+    except ImportError:
+        print("❌ cached_download 仍然不可用")
+        print("🔧 尝试额外修复...")
+
+        # 额外修复：确保正确的版本
+        if run_command("pip install --force-reinstall huggingface_hub==0.16.4", "额外修复 HuggingFace Hub"):
+            try:
+                from huggingface_hub import cached_download
+                print("✅ 额外修复成功")
+                return True
+            except ImportError:
+                print("❌ 额外修复失败")
+                return False
+        else:
+            return False
+    except Exception as e:
+        print(f"⚠️  其他验证问题: {e}")
+        return success_count == len(ai_packages)
 
 def install_utility_packages():
     """安装工具包"""
@@ -383,6 +387,14 @@ def comprehensive_test():
         from diffusers import AutoencoderKL, UNet2DConditionModel
         print(f"✅ Diffusers {diffusers.__version__}: 导入成功")
         test_results['diffusers'] = True
+    except ImportError as e:
+        if 'cached_download' in str(e):
+            print(f"❌ Diffusers测试失败: cached_download 兼容性问题")
+            print("🔧 这表明需要重新运行环境修复")
+            print("💡 建议: 重启内核后重新运行 ultimate_fix_kaggle.py")
+        else:
+            print(f"❌ Diffusers测试失败: {e}")
+        test_results['diffusers'] = False
     except Exception as e:
         print(f"❌ Diffusers测试失败: {e}")
         test_results['diffusers'] = False
