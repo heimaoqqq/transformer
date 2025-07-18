@@ -322,7 +322,7 @@ def train_diffusion(args):
                     torch.cuda.empty_cache()
                     generate_samples(
                         unet, condition_encoder, vae, noise_scheduler,
-                        data_module.all_users[:2], args.output_dir, global_step,  # 减少生成数量
+                        data_module.all_users[:4], args.output_dir, global_step,  # 生成4个用户样本
                         accelerator.device
                     )
                     torch.cuda.empty_cache()  # 生成后清理内存
@@ -446,22 +446,52 @@ def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, ou
             image = image.cpu().permute(0, 2, 3, 1).numpy()[0]
             image = (image * 255).astype(np.uint8)
 
+            # 转换为PIL并添加用户ID标签
+            pil_image = Image.fromarray(image)
+
+            # 添加用户ID文本标签 (可选，用于调试)
+            try:
+                from PIL import ImageDraw, ImageFont
+                draw = ImageDraw.Draw(pil_image)
+                # 使用默认字体，在左上角添加用户ID
+                draw.text((5, 5), f"User {user_id}", fill=(255, 255, 255))
+            except:
+                # 如果字体加载失败，跳过标签
+                pass
+
             # 清理中间变量
             del latents
             torch.cuda.empty_cache()
-            generated_images.append(Image.fromarray(image))
+            generated_images.append(pil_image)
         
         # 保存图像
         sample_dir = Path(output_dir) / "samples"
         sample_dir.mkdir(exist_ok=True)
         
-        # 拼接图像
+        # 智能拼接图像 - 支持网格布局
         width, height = generated_images[0].size
-        combined = Image.new('RGB', (width * len(generated_images), height))
-        
-        for i, img in enumerate(generated_images):
-            combined.paste(img, (i * width, 0))
-        
+        num_images = len(generated_images)
+
+        if num_images == 4:
+            # 2×2网格布局
+            combined = Image.new('RGB', (width * 2, height * 2))
+            positions = [(0, 0), (width, 0), (0, height), (width, height)]
+            for i, img in enumerate(generated_images):
+                combined.paste(img, positions[i])
+        elif num_images <= 6:
+            # 水平拼接 (1行)
+            combined = Image.new('RGB', (width * num_images, height))
+            for i, img in enumerate(generated_images):
+                combined.paste(img, (i * width, 0))
+        else:
+            # 多行网格布局
+            cols = 3
+            rows = (num_images + cols - 1) // cols
+            combined = Image.new('RGB', (width * cols, height * rows))
+            for i, img in enumerate(generated_images):
+                row, col = divmod(i, cols)
+                combined.paste(img, (col * width, row * height))
+
         combined.save(sample_dir / f"step_{step:06d}.png")
 
 def save_checkpoint(unet, condition_encoder, optimizer, epoch, step, output_dir):
