@@ -133,7 +133,7 @@ def train_diffusion(args):
     
     # 创建UNet模型
     unet = UNet2DConditionModel(
-        sample_size=args.resolution // 8,  # VAE压缩8倍
+        sample_size=32,  # 直接设置为实际潜在尺寸 (VAE实际是4倍压缩: 128→32)
         in_channels=4,  # VAE潜在维度
         out_channels=4,
         layers_per_block=2,
@@ -396,7 +396,7 @@ def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, ou
         generated_images = []
         
         for user_id in user_ids:
-            # 随机噪声
+            # 随机噪声 (匹配VAE潜在空间: 128×128 → 32×32×4)
             latents = torch.randn(1, 4, 32, 32, device=device)
             
             # 用户条件
@@ -475,7 +475,7 @@ def main():
     # 数据参数
     parser.add_argument("--data_dir", type=str, required=True, help="数据集目录")
     parser.add_argument("--vae_path", type=str, required=True, help="预训练VAE路径")
-    parser.add_argument("--resolution", type=int, default=256, help="图像分辨率")
+    parser.add_argument("--resolution", type=int, default=128, help="图像分辨率")
     parser.add_argument("--val_split", type=float, default=0.2, help="验证集比例")
     
     # 模型参数
