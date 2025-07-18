@@ -179,17 +179,20 @@ def install_ai_packages():
     """安装AI相关包"""
     print("\n🤖 安装AI相关包")
     print("=" * 30)
-    
-    # 兼容版本组合
+
+    # 更新的兼容版本组合 - 与训练代码完全兼容
     ai_packages = [
-        ("huggingface_hub==0.16.4", "HuggingFace Hub"),
-        ("transformers==4.30.2", "Transformers"),
-        ("diffusers==0.21.4", "Diffusers"),
-        ("accelerate==0.20.3", "Accelerate")
+        ("huggingface_hub==0.19.4", "HuggingFace Hub"),
+        ("transformers==4.36.2", "Transformers"),
+        ("diffusers==0.25.1", "Diffusers"),  # 更新版本，支持所有训练代码API
+        ("accelerate==0.25.0", "Accelerate")
     ]
-    
+
     for package, name in ai_packages:
-        run_command(f"pip install {package}", f"安装 {name}")
+        if not run_command(f"pip install {package}", f"安装 {name}"):
+            # 如果失败，尝试不指定版本
+            print(f"   ⚠️  {name} 指定版本安装失败，尝试最新版本...")
+            run_command(f"pip install {package.split('==')[0]}", f"安装 {name} (最新版本)", ignore_errors=True)
 
 def install_utility_packages():
     """安装工具包"""
