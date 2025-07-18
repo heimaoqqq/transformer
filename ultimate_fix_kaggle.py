@@ -214,18 +214,39 @@ def install_ai_packages():
         return True
     except ImportError:
         print("❌ cached_download 仍然不可用")
-        print("🔧 尝试额外修复...")
+        print("🔧 执行强力修复...")
 
-        # 额外修复：确保正确的版本
-        if run_command("pip install --force-reinstall huggingface_hub==0.16.4", "额外修复 HuggingFace Hub"):
-            try:
-                from huggingface_hub import cached_download
-                print("✅ 额外修复成功")
-                return True
-            except ImportError:
-                print("❌ 额外修复失败")
-                return False
-        else:
+        # 强力修复：完全重装关键包
+        critical_packages = [
+            "huggingface_hub==0.16.4",
+            "diffusers==0.21.4"
+        ]
+
+        for package in critical_packages:
+            print(f"🔄 强力重装 {package}...")
+            # 先卸载
+            package_name = package.split('==')[0]
+            run_command(f"pip uninstall {package_name} -y", f"卸载 {package_name}")
+            # 清理缓存
+            run_command("pip cache purge", "清理缓存")
+            # 重装
+            run_command(f"pip install --no-cache-dir {package}", f"重装 {package}")
+
+        # 最终验证
+        try:
+            # 清理模块缓存
+            import sys
+            modules_to_clear = ['huggingface_hub', 'diffusers']
+            for module in modules_to_clear:
+                if module in sys.modules:
+                    del sys.modules[module]
+
+            from huggingface_hub import cached_download
+            print("✅ 强力修复成功")
+            return True
+        except ImportError:
+            print("❌ 强力修复失败")
+            print("💡 建议: 重启内核后重新运行此脚本")
             return False
     except Exception as e:
         print(f"⚠️  其他验证问题: {e}")
