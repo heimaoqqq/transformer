@@ -84,7 +84,7 @@ def test_model_loading():
             in_channels=4,
             out_channels=4,
             layers_per_block=2,
-            block_out_channels=(320, 640, 1280, 1280),
+            block_out_channels=(128, 256, 512, 512),  # 中型配置
             down_block_types=(
                 "CrossAttnDownBlock2D",
                 "CrossAttnDownBlock2D",
@@ -97,7 +97,7 @@ def test_model_loading():
                 "CrossAttnUpBlock2D",
                 "CrossAttnUpBlock2D",
             ),
-            cross_attention_dim=768,
+            cross_attention_dim=512,  # 与中型配置匹配
             attention_head_dim=8,
             use_linear_projection=True,
         )
@@ -121,7 +121,7 @@ def test_model_loading():
                 
                 # UNet前向
                 timesteps = torch.randint(0, 1000, (1,)).cuda()
-                conditions = torch.randn(1, 1, 768).cuda()
+                conditions = torch.randn(1, 1, 512).cuda()  # 匹配新的cross_attention_dim
                 
                 noise_pred = unet(latents, timesteps, encoder_hidden_states=conditions, return_dict=False)[0]
                 print(f"   UNet预测后: {noise_pred.shape}")

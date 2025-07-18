@@ -67,7 +67,7 @@ def check_vae_ldm_compatibility():
             in_channels=4,
             out_channels=4,
             layers_per_block=2,
-            block_out_channels=(320, 640, 1280, 1280),
+            block_out_channels=(128, 256, 512, 512),  # 中型配置: 适合16GB GPU
             down_block_types=(
                 "CrossAttnDownBlock2D",
                 "CrossAttnDownBlock2D",
@@ -80,7 +80,7 @@ def check_vae_ldm_compatibility():
                 "CrossAttnUpBlock2D",
                 "CrossAttnUpBlock2D",
             ),
-            cross_attention_dim=768,
+            cross_attention_dim=512,  # 与中型配置匹配
         ).to(device)
         
         print(f"   ✅ UNet创建成功")
@@ -132,7 +132,7 @@ def check_vae_ldm_compatibility():
         
         condition_encoder = UserConditionEncoder(
             num_users=31,
-            embed_dim=768
+            embed_dim=512  # 与中型UNet配置匹配
         ).to(device)
         
         with torch.no_grad():
@@ -181,7 +181,7 @@ def check_vae_ldm_compatibility():
                 ("UNet输入", noisy_latents.shape, latents.shape),
                 ("UNet输出", model_pred.shape, latents.shape),
                 ("重建图像", reconstructed.shape, input_images.shape),
-                ("条件嵌入", encoder_hidden_states.shape, (batch_size, 1, 768)),
+                ("条件嵌入", encoder_hidden_states.shape, (batch_size, 1, 512)),
             ]
             
             all_shapes_correct = True
@@ -207,7 +207,7 @@ def check_vae_ldm_compatibility():
         ("分辨率", 128, "VAE和LDM都应使用128×128"),
         ("潜在空间尺寸", 32, "VAE输出和UNet sample_size"),
         ("潜在通道数", 4, "VAE和UNet通道数"),
-        ("条件维度", 768, "UNet cross_attention_dim"),
+        ("条件维度", 512, "UNet cross_attention_dim"),
         ("压缩比", 4, "128÷32=4倍压缩"),
     ]
     

@@ -129,20 +129,20 @@ def train_diffusion(args):
     num_users = len(data_module.all_users)
     print(f"Training with {num_users} users")
     
-    # 创建用户条件编码器
+    # 创建用户条件编码器 (与UNet cross_attention_dim匹配)
     condition_encoder = UserConditionEncoder(
         num_users=num_users,
-        embed_dim=args.cross_attention_dim,
+        embed_dim=args.cross_attention_dim,  # 现在默认512，与中型UNet配置匹配
         dropout=args.condition_dropout
     )
     
-    # 创建UNet模型
+    # 创建UNet模型 (中型项目配置 - 适合16GB GPU)
     unet = UNet2DConditionModel(
         sample_size=32,  # 直接设置为实际潜在尺寸 (VAE实际是4倍压缩: 128→32)
         in_channels=4,  # VAE潜在维度
         out_channels=4,
         layers_per_block=2,
-        block_out_channels=(320, 640, 1280, 1280),
+        block_out_channels=(128, 256, 512, 512),  # 中型配置: ~200M参数 vs 原来~860M参数
         down_block_types=(
             "CrossAttnDownBlock2D",
             "CrossAttnDownBlock2D",
@@ -155,7 +155,7 @@ def train_diffusion(args):
             "CrossAttnUpBlock2D",
             "CrossAttnUpBlock2D",
         ),
-        cross_attention_dim=args.cross_attention_dim,
+        cross_attention_dim=args.cross_attention_dim,  # 默认512，与新配置匹配
         attention_head_dim=8,
         use_linear_projection=True,
         class_embed_type=None,
@@ -499,7 +499,7 @@ def main():
     parser.add_argument("--val_split", type=float, default=0.2, help="验证集比例")
     
     # 模型参数
-    parser.add_argument("--cross_attention_dim", type=int, default=768, help="交叉注意力维度")
+    parser.add_argument("--cross_attention_dim", type=int, default=512, help="交叉注意力维度 (与中型UNet配置匹配)")
     parser.add_argument("--num_train_timesteps", type=int, default=1000, help="训练时间步数")
     parser.add_argument("--condition_dropout", type=float, default=0.1, help="条件dropout概率")
     

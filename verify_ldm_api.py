@@ -45,9 +45,9 @@ def test_unet_api():
             sample_size=32,
             in_channels=4,
             out_channels=4,
-            cross_attention_dim=768,
+            cross_attention_dim=512,  # 中型配置
             layers_per_block=2,
-            block_out_channels=(320, 640, 1280, 1280),
+            block_out_channels=(128, 256, 512, 512),  # 中型配置
             down_block_types=(
                 "CrossAttnDownBlock2D",
                 "CrossAttnDownBlock2D",
@@ -70,7 +70,7 @@ def test_unet_api():
         with torch.no_grad():
             sample = torch.randn(1, 4, 32, 32)
             timestep = torch.randint(0, 1000, (1,))
-            encoder_hidden_states = torch.randn(1, 1, 768)
+            encoder_hidden_states = torch.randn(1, 1, 512)  # 匹配新的cross_attention_dim
             
             # 测试return_dict=False模式
             result = unet(
@@ -244,7 +244,7 @@ def test_training_workflow():
             sample_size=32,
             in_channels=4,
             out_channels=4,
-            cross_attention_dim=768,
+            cross_attention_dim=512,  # 中型配置
         )
         
         scheduler = DDPMScheduler(num_train_timesteps=1000)
@@ -256,7 +256,7 @@ def test_training_workflow():
         with torch.no_grad():
             # 输入数据
             images = torch.randn(2, 3, 128, 128)
-            user_conditions = torch.randn(2, 1, 768)
+            user_conditions = torch.randn(2, 1, 512)  # 匹配新的cross_attention_dim
             
             # VAE编码
             posterior = vae.encode(images).latent_dist

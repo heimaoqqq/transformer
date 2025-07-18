@@ -21,13 +21,13 @@ def test_ldm_config():
     try:
         from diffusers import UNet2DConditionModel
         
-        # 使用修复后的配置
+        # 使用中型项目配置 (适合16GB GPU)
         unet = UNet2DConditionModel(
             sample_size=32,  # 修复: 直接设置为实际潜在尺寸
             in_channels=4,   # VAE潜在维度
             out_channels=4,
             layers_per_block=2,
-            block_out_channels=(320, 640, 1280, 1280),
+            block_out_channels=(128, 256, 512, 512),  # 中型配置: ~200M参数
             down_block_types=(
                 "CrossAttnDownBlock2D",
                 "CrossAttnDownBlock2D",
@@ -40,7 +40,7 @@ def test_ldm_config():
                 "CrossAttnUpBlock2D",
                 "CrossAttnUpBlock2D",
             ),
-            cross_attention_dim=768,
+            cross_attention_dim=512,  # 与中型配置匹配
             attention_head_dim=8,
             use_linear_projection=True,
             class_embed_type=None,
