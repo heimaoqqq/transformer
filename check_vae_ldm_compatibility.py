@@ -226,7 +226,7 @@ def check_vae_ldm_compatibility():
         print(f"   - VAE潜在空间: 32×32×4")
         print(f"   - UNet sample_size: 32")
         print(f"   - 压缩比: 4倍")
-        print(f"   - 条件维度: 768")
+        print(f"   - 条件维度: 512")
         
         return True
     else:
