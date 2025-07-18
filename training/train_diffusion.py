@@ -323,7 +323,8 @@ def train_diffusion(args):
                     generate_samples(
                         unet, condition_encoder, vae, noise_scheduler,
                         data_module.all_users[:4], args.output_dir, global_step,  # 生成4个用户样本
-                        accelerator.device
+                        accelerator.device,
+                        data_module=data_module  # 传递data_module以获取用户ID映射
                     )
                     torch.cuda.empty_cache()  # 生成后清理内存
         
@@ -398,7 +399,7 @@ def validate_model(unet, condition_encoder, vae, noise_scheduler, val_dataloader
     
     return total_loss / num_batches
 
-def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, output_dir, step, device):
+def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, output_dir, step, device, data_module=None):
     """生成样本图像"""
     unet.eval()
     condition_encoder.eval()
@@ -406,18 +407,30 @@ def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, ou
     # 创建DDIM调度器用于快速采样
     ddim_scheduler = DDIMScheduler.from_config(noise_scheduler.config)
     ddim_scheduler.set_timesteps(20)  # 减少采样步数以节省内存
-    
+
     with torch.no_grad():
         # 为每个用户生成一张图像
         generated_images = []
-        
+
         for user_id in user_ids:
             # 随机噪声 (匹配VAE潜在空间: 128×128 → 32×32×4)
             latents = torch.randn(1, 4, 32, 32, device=device)
             
-            # 用户条件
-            user_idx = torch.tensor([user_id], device=device)
-            encoder_hidden_states = condition_encoder(user_idx)
+            # 用户条件 - 修复: 需要将user_id转换为user_idx
+            if data_module is not None:
+                # 使用data_module的all_users列表来映射
+                # all_users是排序后的用户ID列表，索引就是我们需要的user_idx
+                try:
+                    user_idx = data_module.all_users.index(user_id)
+                except ValueError:
+                    print(f"Warning: User ID {user_id} not found in data_module.all_users")
+                    user_idx = 0  # 默认使用第一个用户
+            else:
+                # 回退方案：假设user_id从1开始，转换为从0开始的索引
+                user_idx = user_id - 1 if user_id > 0 else user_id
+
+            user_idx_tensor = torch.tensor([user_idx], device=device)
+            encoder_hidden_states = condition_encoder(user_idx_tensor)
             encoder_hidden_states = encoder_hidden_states.unsqueeze(1)
             
             # 去噪过程
@@ -449,12 +462,13 @@ def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, ou
             # 转换为PIL并添加用户ID标签
             pil_image = Image.fromarray(image)
 
-            # 添加用户ID文本标签 (可选，用于调试)
+            # 添加用户ID文本标签 (显示真实的用户ID和使用的索引)
             try:
                 from PIL import ImageDraw, ImageFont
                 draw = ImageDraw.Draw(pil_image)
-                # 使用默认字体，在左上角添加用户ID
-                draw.text((5, 5), f"User {user_id}", fill=(255, 255, 255))
+                # 使用默认字体，在左上角添加用户ID和索引信息
+                label_text = f"ID:{user_id} Idx:{user_idx}"
+                draw.text((5, 5), label_text, fill=(255, 255, 255))
             except:
                 # 如果字体加载失败，跳过标签
                 pass

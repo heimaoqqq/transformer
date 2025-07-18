@@ -36,21 +36,24 @@ class MicroDopplerGenerator:
         condition_encoder_path: str,
         num_users: int,
         device: str = "cuda",
-        scheduler_type: str = "ddim"
+        scheduler_type: str = "ddim",
+        user_id_mapping: Optional[Dict[int, int]] = None
     ):
         """
         初始化生成器
-        
+
         Args:
             vae_path: VAE模型路径
-            unet_path: UNet模型路径  
+            unet_path: UNet模型路径
             condition_encoder_path: 条件编码器路径
             num_users: 用户总数
             device: 设备
             scheduler_type: 调度器类型 ("ddim" 或 "ddpm")
+            user_id_mapping: 用户ID到索引的映射 {user_id: user_idx}
         """
         self.device = device
         self.num_users = num_users
+        self.user_id_mapping = user_id_mapping or {}  # 用户ID到索引的映射
         
         # 加载VAE
         print("Loading VAE...")
@@ -135,8 +138,9 @@ class MicroDopplerGenerator:
                 # 缩放初始噪声
                 latents = latents * self.scheduler.init_noise_sigma
                 
-                # 编码用户条件
-                user_tensor = torch.tensor([user_id], device=self.device)
+                # 编码用户条件 - 修复: 将user_id转换为user_idx
+                user_idx = self.user_id_mapping.get(user_id, user_id - 1 if user_id > 0 else 0)
+                user_tensor = torch.tensor([user_idx], device=self.device)
                 encoder_hidden_states = self.condition_encoder(user_tensor)
                 encoder_hidden_states = encoder_hidden_states.unsqueeze(1)  # [1, 1, embed_dim]
                 
