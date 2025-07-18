@@ -168,12 +168,12 @@ def fix_version_compatibility():
     """修复版本兼容性问题"""
     print("\n🔧 修复版本兼容性问题:")
     
-    # 推荐的兼容版本组合
+    # 稳定的兼容版本组合 (经过验证)
     recommended_versions = [
-        "diffusers==0.25.1",
-        "transformers==4.36.2", 
-        "accelerate==0.25.0",
-        "huggingface_hub==0.19.4"
+        "huggingface_hub==0.16.4",  # 包含 cached_download
+        "diffusers==0.21.4",        # 与 huggingface_hub 兼容
+        "transformers==4.30.2",
+        "accelerate==0.20.3"
     ]
     
     print("   安装推荐版本组合...")

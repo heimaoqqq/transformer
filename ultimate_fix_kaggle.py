@@ -180,12 +180,12 @@ def install_ai_packages():
     print("\n🤖 安装AI相关包")
     print("=" * 30)
 
-    # 更新的兼容版本组合 - 与训练代码完全兼容
+    # 稳定的兼容版本组合 - 经过验证的稳定组合
     ai_packages = [
-        ("huggingface_hub==0.19.4", "HuggingFace Hub"),
-        ("transformers==4.36.2", "Transformers"),
-        ("diffusers==0.25.1", "Diffusers"),  # 更新版本，支持所有训练代码API
-        ("accelerate==0.25.0", "Accelerate")
+        ("huggingface_hub==0.16.4", "HuggingFace Hub"),  # 包含 cached_download
+        ("transformers==4.30.2", "Transformers"),
+        ("diffusers==0.21.4", "Diffusers"),              # 与 huggingface_hub 0.16.4 兼容
+        ("accelerate==0.20.3", "Accelerate")
     ]
 
     for package, name in ai_packages:
