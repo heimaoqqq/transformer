@@ -175,24 +175,57 @@ def install_pytorch_stack():
 
     return True
 
+def check_and_fix_compatibility():
+    """检查并修复兼容性问题"""
+    print("\n🔍 检查兼容性问题")
+    print("=" * 30)
+
+    # 检查 cached_download 问题
+    try:
+        from huggingface_hub import cached_download
+        print("✅ cached_download 可用")
+        return True
+    except ImportError:
+        print("❌ 发现 cached_download 兼容性问题")
+        print("🔧 将安装兼容版本组合...")
+        return False
+    except Exception as e:
+        print(f"⚠️  其他导入问题: {e}")
+        return False
+
 def install_ai_packages():
     """安装AI相关包"""
     print("\n🤖 安装AI相关包")
     print("=" * 30)
 
-    # 稳定的兼容版本组合 - 经过验证的稳定组合
+    # 检查是否需要修复兼容性
+    needs_fix = not check_and_fix_compatibility()
+
+    # 经过验证的稳定版本组合 - 确保与原项目完全一致
     ai_packages = [
-        ("huggingface_hub==0.16.4", "HuggingFace Hub"),  # 包含 cached_download
-        ("transformers==4.30.2", "Transformers"),
-        ("diffusers==0.21.4", "Diffusers"),              # 与 huggingface_hub 0.16.4 兼容
-        ("accelerate==0.20.3", "Accelerate")
+        ("huggingface_hub==0.16.4", "HuggingFace Hub"),  # 包含 cached_download，与diffusers兼容
+        ("transformers==4.30.2", "Transformers"),        # 稳定版本，支持所有功能
+        ("diffusers==0.21.4", "Diffusers"),              # 与 huggingface_hub 0.16.4 完全兼容
+        ("accelerate==0.20.3", "Accelerate")             # 稳定版本，支持混合精度训练
     ]
 
+    if needs_fix:
+        print("🔧 安装兼容版本组合以修复问题...")
+
+    success_count = 0
     for package, name in ai_packages:
-        if not run_command(f"pip install {package}", f"安装 {name}"):
-            # 如果失败，尝试不指定版本
-            print(f"   ⚠️  {name} 指定版本安装失败，尝试最新版本...")
-            run_command(f"pip install {package.split('==')[0]}", f"安装 {name} (最新版本)", ignore_errors=True)
+        if run_command(f"pip install {package}", f"安装 {name}"):
+            success_count += 1
+        else:
+            # 如果失败，尝试强制重装
+            print(f"   ⚠️  {name} 安装失败，尝试强制重装...")
+            if run_command(f"pip install --force-reinstall {package}", f"强制重装 {name}"):
+                success_count += 1
+            else:
+                print(f"   ❌ {name} 安装失败")
+
+    print(f"\n📊 AI包安装结果: {success_count}/{len(ai_packages)} 成功")
+    return success_count == len(ai_packages)
 
 def install_utility_packages():
     """安装工具包"""
@@ -339,41 +372,75 @@ def comprehensive_test():
         print(f"❌ TorchVision测试失败: {e}")
         test_results['torchvision'] = False
     
-    # 测试4: Diffusers
+    # 测试4: Diffusers (关键兼容性测试)
     print("\n4️⃣ 测试Diffusers...")
     try:
+        # 首先测试 cached_download 兼容性
+        from huggingface_hub import cached_download
+        print("✅ cached_download 导入成功")
+
         import diffusers
-        from diffusers import AutoencoderKL
+        from diffusers import AutoencoderKL, UNet2DConditionModel
         print(f"✅ Diffusers {diffusers.__version__}: 导入成功")
         test_results['diffusers'] = True
     except Exception as e:
         print(f"❌ Diffusers测试失败: {e}")
         test_results['diffusers'] = False
     
-    # 测试5: VAE功能
+    # 测试5: VAE功能 (与项目配置一致)
     print("\n5️⃣ 测试VAE功能...")
     try:
-        from diffusers import AutoencoderKL
+        from diffusers import AutoencoderKL, UNet2DConditionModel, DDPMScheduler
         import torch
-        
+
+        # 创建与项目一致的VAE (128×128 → 32×32)
         vae = AutoencoderKL(
             in_channels=3,
             out_channels=3,
+            down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D"],
+            up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D"],
+            block_out_channels=[128, 256, 512],
             latent_channels=4,
-            sample_size=32,
+            sample_size=128,
         )
-        
+
+        # 创建与项目一致的UNet (sample_size=32)
+        unet = UNet2DConditionModel(
+            sample_size=32,
+            in_channels=4,
+            out_channels=4,
+            cross_attention_dim=768,
+        )
+
+        scheduler = DDPMScheduler(num_train_timesteps=1000)
+
+        # 测试完整工作流程
         with torch.no_grad():
-            test_input = torch.randn(1, 3, 32, 32)
+            test_input = torch.randn(1, 3, 128, 128)
+            test_conditions = torch.randn(1, 1, 768)
+
+            # VAE编码 (128×128 → 32×32)
             latents = vae.encode(test_input).latent_dist.sample()
+
+            # 添加噪声
+            noise = torch.randn_like(latents)
+            timesteps = torch.randint(0, 1000, (1,))
+            noisy_latents = scheduler.add_noise(latents, noise, timesteps)
+
+            # UNet预测
+            pred = unet(noisy_latents, timesteps, encoder_hidden_states=test_conditions, return_dict=False)[0]
+
+            # VAE解码 (32×32 → 128×128)
             reconstructed = vae.decode(latents).sample
-        
-        print("✅ VAE功能测试通过")
+
+        print("✅ VAE+LDM完整工作流程测试通过")
         print(f"   输入: {test_input.shape}")
         print(f"   潜在: {latents.shape}")
         print(f"   重建: {reconstructed.shape}")
+        print(f"   UNet预测: {pred.shape}")
+        print(f"   压缩比: {test_input.shape[-1] // latents.shape[-1]}倍")
         test_results['vae'] = True
-        
+
     except Exception as e:
         print(f"❌ VAE功能测试失败: {e}")
         test_results['vae'] = False
