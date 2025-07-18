@@ -102,9 +102,14 @@ def train_diffusion(args):
         )
     
     # 加载预训练的VAE
+    print("Loading VAE...")
     vae = AutoencoderKL.from_pretrained(args.vae_path)
     vae.requires_grad_(False)  # 冻结VAE参数
     vae.eval()
+
+    # 清理GPU内存
+    torch.cuda.empty_cache()
+    print(f"GPU memory after VAE loading: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
     
     # 创建数据模块
     data_module = MicroDopplerDataModule(
@@ -200,9 +205,17 @@ def train_diffusion(args):
     unet, condition_encoder, optimizer, train_dataloader, val_dataloader, lr_scheduler = accelerator.prepare(
         unet, condition_encoder, optimizer, train_dataloader, val_dataloader, lr_scheduler
     )
-    
-    # VAE移到正确的设备
+
+    # VAE移到正确的设备并启用内存优化
     vae = vae.to(accelerator.device)
+
+    # 启用内存优化
+    if hasattr(torch.backends.cudnn, 'benchmark'):
+        torch.backends.cudnn.benchmark = True
+
+    # 清理GPU内存
+    torch.cuda.empty_cache()
+    print(f"GPU memory after model preparation: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
     
     # 训练循环
     global_step = 0
@@ -305,11 +318,14 @@ def train_diffusion(args):
                 
                 # 生成样本图像
                 if global_step % args.sample_interval == 0 and accelerator.is_main_process:
+                    # 清理内存后生成样本
+                    torch.cuda.empty_cache()
                     generate_samples(
                         unet, condition_encoder, vae, noise_scheduler,
-                        data_module.all_users[:4], args.output_dir, global_step,
+                        data_module.all_users[:2], args.output_dir, global_step,  # 减少生成数量
                         accelerator.device
                     )
+                    torch.cuda.empty_cache()  # 生成后清理内存
         
         # 更新学习率
         lr_scheduler.step()
@@ -386,10 +402,10 @@ def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, ou
     """生成样本图像"""
     unet.eval()
     condition_encoder.eval()
-    
+
     # 创建DDIM调度器用于快速采样
     ddim_scheduler = DDIMScheduler.from_config(noise_scheduler.config)
-    ddim_scheduler.set_timesteps(50)
+    ddim_scheduler.set_timesteps(20)  # 减少采样步数以节省内存
     
     with torch.no_grad():
         # 为每个用户生成一张图像
@@ -423,11 +439,15 @@ def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, ou
             vae_model = vae.module if hasattr(vae, 'module') else vae
             latents = latents / vae_model.config.scaling_factor
             image = vae_model.decode(latents).sample
-            
+
             # 转换为PIL图像
             image = (image / 2 + 0.5).clamp(0, 1)
             image = image.cpu().permute(0, 2, 3, 1).numpy()[0]
             image = (image * 255).astype(np.uint8)
+
+            # 清理中间变量
+            del latents
+            torch.cuda.empty_cache()
             generated_images.append(Image.fromarray(image))
         
         # 保存图像
