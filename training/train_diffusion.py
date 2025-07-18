@@ -441,7 +441,8 @@ def generate_samples(unet, condition_encoder, vae, noise_scheduler, user_ids, ou
             image = vae_model.decode(latents).sample
 
             # 转换为PIL图像
-            image = (image / 2 + 0.5).clamp(0, 1)
+            # 修复: VAE输出已经在[0,1]范围，不需要额外的归一化
+            image = image.clamp(0, 1)
             image = image.cpu().permute(0, 2, 3, 1).numpy()[0]
             image = (image * 255).astype(np.uint8)
 
