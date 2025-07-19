@@ -355,7 +355,8 @@ def main():
     if args.seed is not None:
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
-        generator = torch.Generator().manual_seed(args.seed)
+        # 确保生成器在正确的设备上
+        generator = torch.Generator(device=device).manual_seed(args.seed)
     else:
         generator = None
     
