@@ -315,16 +315,45 @@ class StatisticalValidator:
 
 # 使用示例
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="统计验证器 - 不需要预训练模型")
+    parser.add_argument("--data_root", type=str, default="/kaggle/input/dataset",
+                       help="真实数据目录路径")
+    parser.add_argument("--target_user_id", type=int, default=1,
+                       help="目标用户ID")
+    parser.add_argument("--generated_images_dir", type=str,
+                       default="/kaggle/working/validation_results/generated_images",
+                       help="生成图像目录路径")
+
+    args = parser.parse_args()
+
+    print("📊 统计验证器 - 基于数学统计的验证方法")
+    print(f"🔧 配置:")
+    print(f"  数据目录: {args.data_root}")
+    print(f"  目标用户: {args.target_user_id}")
+    print(f"  生成图像目录: {args.generated_images_dir}")
+
     validator = StatisticalValidator()
-    
+
     # 加载用户统计特征
-    user_features = validator.load_user_statistics("data/processed")
-    
+    user_features = validator.load_user_statistics(args.data_root)
+
+    if not user_features:
+        print("❌ 未找到用户数据，请检查数据目录路径")
+        exit(1)
+
     # 计算用户分布
     validator.compute_user_distributions(user_features)
-    
-    # 验证生成图像
-    result = validator.validate_generated_images(
-        target_user_id=1,
-        generated_images_dir="validation_results/generated_images"
-    )
+
+    # 验证生成图像（如果存在）
+    from pathlib import Path
+    if Path(args.generated_images_dir).exists():
+        result = validator.validate_generated_images(
+            target_user_id=args.target_user_id,
+            generated_images_dir=args.generated_images_dir
+        )
+        print(f"\n✅ 统计验证完成")
+    else:
+        print(f"\n📋 用户特征分析完成，生成图像目录不存在，跳过验证步骤")
+        print(f"💡 提示: 先运行传统验证器生成图像，再运行统计验证")

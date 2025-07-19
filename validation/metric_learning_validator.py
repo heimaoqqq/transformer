@@ -338,20 +338,54 @@ class MetricLearningValidator:
 
 # 使用示例
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="度量学习验证器 - 不需要预训练模型")
+    parser.add_argument("--data_root", type=str, default="/kaggle/input/dataset",
+                       help="真实数据目录路径")
+    parser.add_argument("--target_user_id", type=int, default=1,
+                       help="目标用户ID")
+    parser.add_argument("--generated_images_dir", type=str,
+                       default="/kaggle/working/validation_results/generated_images",
+                       help="生成图像目录路径")
+    parser.add_argument("--epochs", type=int, default=30,
+                       help="Siamese网络训练轮数")
+    parser.add_argument("--threshold", type=float, default=0.7,
+                       help="相似性阈值")
+
+    args = parser.parse_args()
+
+    print("🧠 度量学习验证器 - 针对相似特征优化")
+    print(f"🔧 配置:")
+    print(f"  数据目录: {args.data_root}")
+    print(f"  目标用户: {args.target_user_id}")
+    print(f"  训练轮数: {args.epochs}")
+    print(f"  相似性阈值: {args.threshold}")
+
     validator = MetricLearningValidator()
-    
+
     # 加载数据
-    user_images = validator.load_user_images("data/processed")
-    
+    user_images = validator.load_user_images(args.data_root)
+
+    if not user_images:
+        print("❌ 未找到用户数据，请检查数据目录路径")
+        exit(1)
+
     # 训练Siamese网络
-    history = validator.train_siamese_network(user_images, epochs=30)
-    
+    history = validator.train_siamese_network(user_images, epochs=args.epochs)
+
     # 计算用户原型
     validator.compute_user_prototypes(user_images)
-    
-    # 验证生成图像
-    result = validator.validate_generated_images(
-        target_user_id=1,
-        generated_images_dir="validation_results/generated_images",
-        threshold=0.7
-    )
+
+    # 验证生成图像（如果存在）
+    from pathlib import Path
+    if Path(args.generated_images_dir).exists():
+        result = validator.validate_generated_images(
+            target_user_id=args.target_user_id,
+            generated_images_dir=args.generated_images_dir,
+            threshold=args.threshold
+        )
+        print(f"\n✅ 度量学习验证完成")
+    else:
+        print(f"\n📋 Siamese网络训练完成，生成图像目录不存在，跳过验证步骤")
+        print(f"💡 提示: 先运行传统验证器生成图像，再运行度量学习验证")
