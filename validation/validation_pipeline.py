@@ -39,8 +39,7 @@ class ValidationConfig:
     
     # 生成配置
     num_images_to_generate: int = 16
-    guidance_scale: float = 15.0
-    num_inference_steps: int = 50
+    num_inference_steps: int = 50  # DDIM推理步数，建议50-200
     
     # 模型路径
     vae_path: Optional[str] = None
@@ -108,15 +107,18 @@ class ConditionalDiffusionValidator:
             self.condition_encoder = self.condition_encoder.to(self.config.device)
             print("  ✅ 条件编码器加载完成")
             
-            # 创建调度器
-            from diffusers import DDPMScheduler
-            self.scheduler = DDPMScheduler(
+            # 创建调度器 (与训练时一致)
+            from diffusers import DDPMScheduler, DDIMScheduler
+            noise_scheduler = DDPMScheduler(
                 num_train_timesteps=1000,
                 beta_start=0.00085,
                 beta_end=0.012,
                 beta_schedule="scaled_linear",
                 clip_sample=False,
+                prediction_type="epsilon",
             )
+            # 使用DDIM调度器进行推理 (与训练时生成样本一致)
+            self.scheduler = DDIMScheduler.from_config(noise_scheduler.config)
             print("  ✅ 调度器创建完成")
             
             return True
@@ -262,7 +264,7 @@ class ConditionalDiffusionValidator:
             return None
 
         print(f"\n🎨 生成用户 {self.config.target_user_id} 的图像")
-        print(f"  参数: guidance_scale={self.config.guidance_scale}, steps={self.config.num_inference_steps}")
+        print(f"  参数: 纯条件生成, steps={self.config.num_inference_steps}")
 
         try:
             # 创建输出目录
@@ -299,23 +301,12 @@ class ConditionalDiffusionValidator:
                     latents = latents * self.scheduler.init_noise_sigma
 
                     for t in self.scheduler.timesteps:
-                        # 有条件预测
-                        noise_pred_cond = self.unet(
+                        # 纯条件预测 (与训练时相同)
+                        noise_pred = self.unet(
                             latents,
                             t,
                             encoder_hidden_states=user_embedding
                         ).sample
-
-                        # 无条件预测
-                        zero_embedding = torch.zeros_like(user_embedding)
-                        noise_pred_uncond = self.unet(
-                            latents,
-                            t,
-                            encoder_hidden_states=zero_embedding
-                        ).sample
-
-                        # 分类器自由指导
-                        noise_pred = noise_pred_uncond + self.config.guidance_scale * (noise_pred_cond - noise_pred_uncond)
 
                         # 调度器步骤
                         latents = self.scheduler.step(noise_pred, t, latents).prev_sample
@@ -418,7 +409,7 @@ class ConditionalDiffusionValidator:
                     print(f"🎉 验证成功! 成功率: {success_rate:.2f}, 平均置信度: {avg_confidence:.3f}")
                 else:
                     print(f"⚠️  验证结果不理想. 成功率: {success_rate:.2f}, 平均置信度: {avg_confidence:.3f}")
-                    print(f"💡 建议: 尝试更高的指导强度 (guidance_scale > {self.config.guidance_scale})")
+                    print(f"💡 建议: 尝试更多推理步数 (num_inference_steps > {self.config.num_inference_steps})")
 
         return results
 
@@ -461,10 +452,8 @@ def main():
                        help="是否生成图像")
     parser.add_argument("--num_images_to_generate", type=int, default=16,
                        help="生成图像数量")
-    parser.add_argument("--guidance_scale", type=float, default=15.0,
-                       help="指导强度 (微多普勒建议15-50)")
     parser.add_argument("--num_inference_steps", type=int, default=50,
-                       help="推理步数")
+                       help="DDIM推理步数 (建议50-200)")
 
     # 模型路径
     parser.add_argument("--vae_path", type=str,
@@ -488,7 +477,6 @@ def main():
         confidence_threshold=args.confidence_threshold,
         model_type=args.model_type,
         num_images_to_generate=args.num_images_to_generate,
-        guidance_scale=args.guidance_scale,
         num_inference_steps=args.num_inference_steps,
         vae_path=args.vae_path,
         unet_path=args.unet_path,
@@ -503,7 +491,7 @@ def main():
     print(f"  输出目录: {config.output_dir}")
     print(f"  分类器: {config.model_type}, epochs={config.classifier_epochs}, batch_size={config.classifier_batch_size}")
     if args.generate_images:
-        print(f"  生成: guidance_scale={config.guidance_scale}, steps={config.num_inference_steps}")
+        print(f"  生成: 纯条件生成, steps={config.num_inference_steps}")
         print(f"  模型: VAE={config.vae_path is not None}, UNet={config.unet_path is not None}")
     print("=" * 60)
 
