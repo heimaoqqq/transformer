@@ -57,29 +57,137 @@ class UserImageDataset(Dataset):
         return image, label
 
 class UserClassifier(nn.Module):
-    """基于ResNet-18的用户分类器"""
-    
-    def __init__(self, num_classes=2, pretrained=True):
+    """改进的用户分类器 - 专门针对微多普勒时频图优化"""
+
+    def __init__(self, num_classes=2, pretrained=True, dropout_rate=0.5):
         """
         Args:
             num_classes: 分类数量 (2: 是/不是该用户)
             pretrained: 是否使用预训练权重
+            dropout_rate: Dropout比率
         """
         super(UserClassifier, self).__init__()
-        
+
         # 使用ResNet-18作为骨干网络
         self.backbone = resnet18(pretrained=pretrained)
-        
-        # 修改最后的全连接层
+
+        # 移除原始的全连接层
         in_features = self.backbone.fc.in_features
-        self.backbone.fc = nn.Linear(in_features, num_classes)
-        
-        # 添加dropout防止过拟合
-        self.dropout = nn.Dropout(0.5)
-        
+        self.backbone.fc = nn.Identity()  # 移除最后的fc层
+
+        # 添加改进的分类头 - 更适合细微特征识别
+        self.classifier = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(in_features, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout_rate * 0.5),  # 较小的dropout
+            nn.Linear(256, 64),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout_rate * 0.25),  # 更小的dropout
+            nn.Linear(64, num_classes)
+        )
+
+        # 初始化分类头权重
+        self._init_classifier_weights()
+
+    def _init_classifier_weights(self):
+        """初始化分类头权重"""
+        for m in self.classifier.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
     def forward(self, x):
-        # 直接使用ResNet的forward方法，更简单可靠
-        return self.backbone(x)
+        # 特征提取
+        features = self.backbone(x)  # [batch_size, 512]
+
+        # 分类
+        output = self.classifier(features)  # [batch_size, num_classes]
+
+        return output
+
+class MicroDopplerCNN(nn.Module):
+    """专门为微多普勒时频图设计的轻量级CNN"""
+
+    def __init__(self, num_classes=2, dropout_rate=0.5):
+        """
+        专门针对微多普勒时频图的特征设计
+        关注时间-频率域的局部模式
+        """
+        super(MicroDopplerCNN, self).__init__()
+
+        # 特征提取层 - 专门捕获时频图特征
+        self.features = nn.Sequential(
+            # 第一组：捕获粗粒度时频特征
+            nn.Conv2d(3, 32, kernel_size=7, stride=2, padding=3),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+
+            # 第二组：捕获中等粒度特征
+            nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            # 第三组：捕获细粒度特征
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            # 第四组：高级特征
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d((4, 4))  # 自适应池化到固定尺寸
+        )
+
+        # 分类器
+        self.classifier = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(256 * 4 * 4, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout_rate * 0.5),
+            nn.Linear(512, 128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout_rate * 0.25),
+            nn.Linear(128, num_classes)
+        )
+
+        # 初始化权重
+        self._init_weights()
+
+    def _init_weights(self):
+        """初始化网络权重"""
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        # 特征提取
+        features = self.features(x)  # [batch_size, 256, 4, 4]
+
+        # 展平
+        features = features.view(features.size(0), -1)  # [batch_size, 256*4*4]
+
+        # 分类
+        output = self.classifier(features)
+
+        return output
 
 class UserValidationSystem:
     """用户验证系统"""
@@ -96,11 +204,20 @@ class UserValidationSystem:
         
         print(f"🚀 使用设备: {self.device}")
         
-        # 图像变换 (与训练数据保持一致)
+        # 改进的图像变换 - 针对微多普勒时频图优化
         self.transform = transforms.Compose([
-            transforms.Resize((128, 128), interpolation=transforms.InterpolationMode.LANCZOS),  # 与训练时一致
+            transforms.Resize((128, 128), interpolation=transforms.InterpolationMode.LANCZOS),
             transforms.ToTensor(),
-            # 不使用归一化，与训练数据保持一致 (训练数据在[0,1]范围)
+            # 使用ImageNet标准化 - 即使对于微多普勒数据也有助于特征学习
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            # 添加轻微的数据增强以提高泛化能力
+        ])
+
+        # 验证时的变换 (不包含数据增强)
+        self.val_transform = transforms.Compose([
+            transforms.Resize((128, 128), interpolation=transforms.InterpolationMode.LANCZOS),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
         
         # 存储训练好的分类器
@@ -162,7 +279,7 @@ class UserValidationSystem:
     
     def train_user_classifier(self, user_id: int, image_paths: List[str], labels: List[int],
                             epochs: int = 20, batch_size: int = 32, learning_rate: float = 1e-3,
-                            validation_split: float = 0.2) -> Dict:
+                            validation_split: float = 0.2, model_type: str = "resnet") -> Dict:
         """
         训练用户分类器
         
@@ -202,9 +319,23 @@ class UserValidationSystem:
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
         
-        # 创建模型
-        model = UserClassifier(num_classes=2, pretrained=True)
+        # 创建模型 - 支持不同架构选择
+        if model_type.lower() == "resnet":
+            model = UserClassifier(num_classes=2, pretrained=True, dropout_rate=0.5)
+            print(f"  🏗️  使用ResNet-18分类器 (适合通用图像)")
+        elif model_type.lower() == "microdoppler":
+            model = MicroDopplerCNN(num_classes=2, dropout_rate=0.5)
+            print(f"  🏗️  使用微多普勒专用CNN (专门优化)")
+        else:
+            print(f"  ⚠️  未知模型类型 {model_type}，使用默认ResNet-18")
+            model = UserClassifier(num_classes=2, pretrained=True, dropout_rate=0.5)
+
         model.to(self.device)
+
+        # 打印模型信息
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"  📊 模型参数: 总计 {total_params:,}, 可训练 {trainable_params:,}")
         
         # 损失函数和优化器
         criterion = nn.CrossEntropyLoss()
