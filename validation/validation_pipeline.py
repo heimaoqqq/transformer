@@ -35,7 +35,6 @@ class ValidationConfig:
     classifier_lr: float = 5e-4
     max_samples_per_class: int = 1000
     confidence_threshold: float = 0.8
-    model_type: str = "microdoppler"  # resnet 或 microdoppler
     
     # 生成配置
     num_images_to_generate: int = 100  # 增加到100张，获得更可靠的统计结果
@@ -182,8 +181,7 @@ class ConditionalDiffusionValidator:
                 labels=labels,
                 epochs=self.config.classifier_epochs,
                 batch_size=self.config.classifier_batch_size,
-                learning_rate=self.config.classifier_lr,
-                model_type=self.config.model_type
+                learning_rate=self.config.classifier_lr
             )
             
             # 保存训练曲线
@@ -706,9 +704,7 @@ def main():
                        help="每类最大样本数")
     parser.add_argument("--confidence_threshold", type=float, default=0.8,
                        help="置信度阈值")
-    parser.add_argument("--model_type", type=str, default="microdoppler",
-                       choices=["resnet", "microdoppler"],
-                       help="分类器模型类型 (resnet: ResNet-18, microdoppler: 微多普勒专用CNN)")
+
 
     # 生成配置
     parser.add_argument("--generate_images", action="store_true",
@@ -738,7 +734,6 @@ def main():
         classifier_lr=args.classifier_lr,
         max_samples_per_class=args.max_samples_per_class,
         confidence_threshold=args.confidence_threshold,
-        model_type=args.model_type,
         num_images_to_generate=args.num_images_to_generate,
         num_inference_steps=args.num_inference_steps,
         vae_path=args.vae_path,
