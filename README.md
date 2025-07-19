@@ -23,6 +23,18 @@
 - 生成指定用户的微多普勒图像
 - 使用 UNet2DConditionModel
 
+## 🔍 验证系统
+
+### 核心验证工具
+- **用户分类器**: 基于ResNet-18的二分类器，验证生成图像是否包含用户特征
+- **极端指导强度**: 针对微多普勒数据的特殊生成策略
+- **成功标准**: 置信度>0.8算成功，成功率≥60%为良好
+
+### 微多普勒数据特点
+- **用户间差异小**: 步态特征的微小差异需要精细学习
+- **需要极端参数**: 指导强度30-50，推理步数150-200
+- **频域特征**: 重点关注频率重心、扩散、峰值位置差异
+
 ## 🚀 快速开始
 
 ### Kaggle环境 (推荐)
@@ -47,6 +59,39 @@
 # 6. 如果质量不佳，使用诊断工具
 !python diagnose_vae.py     # 分析问题原因
 !python quick_test_vae.py   # 测试新配置
+
+# 7. 条件扩散训练
+!python training/train_diffusion.py \
+    --data_dir "/kaggle/input/dataset" \
+    --vae_path "/kaggle/input/final-model" \
+    --output_dir "/kaggle/working/diffusion_model" \
+    --epochs 100 \
+    --batch_size 8 \
+    --learning_rate 1e-4
+
+# 8. 验证生成效果 (微多普勒专用)
+!python validation/improved_single_user_validation.py \
+    --target_user_id 1 \
+    --real_data_root "/kaggle/input/dataset" \
+    --generate_images \
+    --vae_path "/kaggle/input/final-model" \
+    --unet_path "/kaggle/working/diffusion_model" \
+    --condition_encoder_path "/kaggle/working/diffusion_model/condition_encoder.pt" \
+    --epochs 25 \
+    --batch_size 32 \
+    --max_samples_per_class 1000 \
+    --guidance_scale 15.0
+
+# 9. 极端指导强度测试 (如果验证失败)
+!python validation/heatmap_specific_solution.py \
+    --action generate \
+    --user_id 1 \
+    --data_dir "/kaggle/input/dataset" \
+    --vae_path "/kaggle/input/final-model" \
+    --unet_path "/kaggle/working/diffusion_model" \
+    --condition_encoder_path "/kaggle/working/diffusion_model/condition_encoder.pt" \
+    --guidance_scale 50.0 \
+    --num_inference_steps 200
 
 # 7. 扩散模型训练 (可选)
 !python training/train_diffusion.py \
