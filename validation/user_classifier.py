@@ -184,7 +184,6 @@ class UserValidationSystem:
 
         # 验证时使用相同的变换
         self.val_transform = self.transform
-        ])
         
         # 存储训练好的分类器
         self.classifiers = {}
