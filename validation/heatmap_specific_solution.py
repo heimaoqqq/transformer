@@ -87,20 +87,38 @@ def generate_with_extreme_guidance(
     try:
         # 导入必要的模块
         from diffusers import AutoencoderKL, UNet2DConditionModel, DDPMScheduler
-        from training.train_diffusion import UserConditionEncoder, create_user_id_mapping
-        
+        from training.train_diffusion import UserConditionEncoder
+
         # 设备设置
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"使用设备: {device}")
-        
+
         # 加载模型
         print("📂 加载模型...")
         vae = AutoencoderKL.from_pretrained(vae_path)
         unet = UNet2DConditionModel.from_pretrained(unet_path)
-        
-        # 创建用户ID映射
-        user_id_mapping = create_user_id_mapping(data_dir)
-        num_users = len(user_id_mapping)
+
+        # 创建用户ID映射 (复制自generate_training_style.py的逻辑)
+        print("🔍 获取训练时的用户ID映射...")
+        data_path = Path(data_dir)
+        all_users = []
+
+        # 扫描数据目录，获取所有用户ID (与训练时逻辑一致)
+        for user_dir in data_path.iterdir():
+            if user_dir.is_dir() and user_dir.name.startswith('ID_'):
+                try:
+                    user_id_found = int(user_dir.name.split('_')[1])
+                    all_users.append(user_id_found)
+                except ValueError:
+                    continue
+
+        # 排序并创建映射 (与训练时逻辑一致)
+        all_users = sorted(all_users)
+        user_id_mapping = {user_id: idx for idx, user_id in enumerate(all_users)}
+        num_users = len(all_users)
+
+        print(f"  找到 {len(all_users)} 个用户: {all_users}")
+        print(f"  用户ID映射: {user_id_mapping}")
         
         # 加载条件编码器
         condition_encoder = UserConditionEncoder(
