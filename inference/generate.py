@@ -66,13 +66,16 @@ class MicroDopplerGenerator:
         self.unet = UNet2DConditionModel.from_pretrained(unet_path)
         self.unet.to(device)
         self.unet.eval()
-        
+
+        # 显示UNet配置信息
+        print(f"UNet配置信息:")
+        print(f"  - cross_attention_dim: {self.unet.config.cross_attention_dim}")
+        print(f"  - in_channels: {self.unet.config.in_channels}")
+        print(f"  - sample_size: {self.unet.config.sample_size}")
+
         # 加载条件编码器
         print("Loading Condition Encoder...")
-        self.condition_encoder = UserConditionEncoder(
-            num_users=num_users,
-            embed_dim=self.unet.config.cross_attention_dim
-        )
+
         # 处理条件编码器路径 - 可能是目录或文件
         if Path(condition_encoder_path).is_dir():
             # 如果是目录，查找condition_encoder.pt文件
@@ -81,7 +84,40 @@ class MicroDopplerGenerator:
                 raise FileNotFoundError(f"条件编码器文件不存在: {condition_encoder_file}")
             condition_encoder_path = str(condition_encoder_file)
 
-        self.condition_encoder.load_state_dict(torch.load(condition_encoder_path, map_location=device))
+        # 先加载条件编码器权重来检查实际维度
+        condition_encoder_state = torch.load(condition_encoder_path, map_location='cpu')
+
+        # 从权重中推断实际的嵌入维度
+        if 'user_embedding.weight' in condition_encoder_state:
+            actual_num_users, actual_embed_dim = condition_encoder_state['user_embedding.weight'].shape
+            print(f"条件编码器实际配置:")
+            print(f"  - 用户数: {actual_num_users}")
+            print(f"  - 嵌入维度: {actual_embed_dim}")
+            print(f"  - UNet期望维度: {self.unet.config.cross_attention_dim}")
+
+            # 使用实际的嵌入维度创建条件编码器
+            self.condition_encoder = UserConditionEncoder(
+                num_users=num_users,
+                embed_dim=actual_embed_dim
+            )
+
+            # 如果维度不匹配，需要添加投影层
+            if actual_embed_dim != self.unet.config.cross_attention_dim:
+                print(f"⚠️  维度不匹配，添加投影层: {actual_embed_dim} -> {self.unet.config.cross_attention_dim}")
+                self.projection_layer = torch.nn.Linear(actual_embed_dim, self.unet.config.cross_attention_dim)
+                self.projection_layer.to(device)
+            else:
+                self.projection_layer = None
+        else:
+            # 如果无法推断，使用UNet的维度
+            print("⚠️  无法从权重推断维度，使用UNet的cross_attention_dim")
+            self.condition_encoder = UserConditionEncoder(
+                num_users=num_users,
+                embed_dim=self.unet.config.cross_attention_dim
+            )
+            self.projection_layer = None
+
+        self.condition_encoder.load_state_dict(condition_encoder_state)
         self.condition_encoder.to(device)
         self.condition_encoder.eval()
         
@@ -178,12 +214,22 @@ class MicroDopplerGenerator:
                 user_idx = self.user_id_mapping.get(user_id, user_id - 1 if user_id > 0 else 0)
                 user_tensor = torch.tensor([user_idx], device=self.device)
                 encoder_hidden_states = self.condition_encoder(user_tensor)
+
+                # 如果需要，应用投影层
+                if self.projection_layer is not None:
+                    encoder_hidden_states = self.projection_layer(encoder_hidden_states)
+
                 encoder_hidden_states = encoder_hidden_states.unsqueeze(1)  # [1, 1, embed_dim]
-                
+
                 # 无条件嵌入 (用于classifier-free guidance)
                 if guidance_scale > 1.0:
                     uncond_user_tensor = torch.tensor([0], device=self.device)  # 假设0是无条件token
                     uncond_encoder_hidden_states = self.condition_encoder(uncond_user_tensor)
+
+                    # 如果需要，应用投影层
+                    if self.projection_layer is not None:
+                        uncond_encoder_hidden_states = self.projection_layer(uncond_encoder_hidden_states)
+
                     uncond_encoder_hidden_states = uncond_encoder_hidden_states.unsqueeze(1)
                     
                     # 拼接条件和无条件嵌入
@@ -259,9 +305,14 @@ class MicroDopplerGenerator:
         # 获取用户嵌入
         user1_tensor = torch.tensor([user_id1], device=self.device)
         user2_tensor = torch.tensor([user_id2], device=self.device)
-        
+
         user1_embed = self.condition_encoder(user1_tensor)
         user2_embed = self.condition_encoder(user2_tensor)
+
+        # 如果需要，应用投影层
+        if self.projection_layer is not None:
+            user1_embed = self.projection_layer(user1_embed)
+            user2_embed = self.projection_layer(user2_embed)
         
         # 设置调度器
         self.scheduler.set_timesteps(num_inference_steps)
