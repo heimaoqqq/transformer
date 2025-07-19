@@ -323,6 +323,7 @@ class UserValidationSystem:
         # 早停机制
         patience = 10  # 10个epoch没有改善就停止
         patience_counter = 0
+        min_improvement = 0.001  # 最小改善阈值，避免微小波动触发早停
         
         # 训练循环
         for epoch in range(epochs):
@@ -379,13 +380,17 @@ class UserValidationSystem:
             history['val_acc'].append(val_acc)
             
             # 保存最佳模型
-            # 早停和最佳模型保存
-            if val_acc > best_val_acc:
+            # 早停和最佳模型保存（修复逻辑）
+            if val_acc > best_val_acc + min_improvement:
+                # 显著改善：更新最佳模型并重置计数器
                 best_val_acc = val_acc
                 best_model_state = model.state_dict().copy()
-                patience_counter = 0  # 重置计数器
+                patience_counter = 0
+                print(f"    ✅ 验证准确率改善: {val_acc:.4f} (最佳: {best_val_acc:.4f})")
             else:
+                # 没有显著改善：增加计数器
                 patience_counter += 1
+                print(f"    ⏳ 无改善计数: {patience_counter}/{patience}")
 
             # 更新学习率
             scheduler.step()
@@ -394,17 +399,36 @@ class UserValidationSystem:
 
             # 早停检查
             if patience_counter >= patience:
-                print(f"  🛑 早停触发：{patience}个epoch无改善，停止训练")
+                print(f"  🛑 早停触发：连续{patience}个epoch验证准确率无显著改善，停止训练")
+                print(f"  📊 最终最佳验证准确率: {best_val_acc:.4f}")
                 break
         
         # 加载最佳模型
         if best_model_state is not None:
             model.load_state_dict(best_model_state)
-        
+            print(f"  📥 已加载最佳模型状态")
+        else:
+            print(f"  ⚠️  未找到更好的模型，使用最终状态")
+
         # 保存分类器
         self.classifiers[user_id] = model
-        
-        print(f"✅ 用户 {user_id} 分类器训练完成，最佳验证准确率: {best_val_acc:.3f}")
+
+        # 训练完成总结
+        final_epoch = len(history['val_acc'])
+        print(f"✅ 用户 {user_id} 分类器训练完成")
+        print(f"  📊 训练轮数: {final_epoch}/{epochs}")
+        print(f"  🎯 最佳验证准确率: {best_val_acc:.4f}")
+        print(f"  📈 最终训练准确率: {history['train_acc'][-1]:.4f}")
+
+        # 判断训练质量
+        if best_val_acc >= 0.85:
+            print(f"  🌟 训练质量: 优秀")
+        elif best_val_acc >= 0.75:
+            print(f"  ✅ 训练质量: 良好")
+        elif best_val_acc >= 0.65:
+            print(f"  ⚠️  训练质量: 一般")
+        else:
+            print(f"  ❌ 训练质量: 较差，建议检查数据或增加训练轮数")
 
         return history
 
