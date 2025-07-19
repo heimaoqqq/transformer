@@ -159,24 +159,39 @@ class MetricLearningValidator:
         return user_images
     
     def train_siamese_network(self, user_images: Dict[int, List[str]],
-                            epochs: int = 50, batch_size: int = 64) -> Dict:
+                            epochs: int = 50, batch_size: int = 32) -> Dict:
         """训练Siamese网络"""
         print(f"\n🎯 训练Siamese网络...")
         
         # 创建数据集（优化数据加载）
         dataset = SiameseDataset(user_images, self.transform)
+
+        # 小数据集自动调整批次大小
+        if len(dataset) < 1000 and batch_size > 16:
+            recommended_batch_size = max(8, len(dataset) // 50)  # 确保至少50个batch
+            print(f"  🔧 小数据集自动调整: batch_size {batch_size} -> {recommended_batch_size}")
+            batch_size = recommended_batch_size
+
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=4,  # 增加数据加载线程
+            num_workers=2,  # P100环境减少worker数量
             pin_memory=True,  # 加速GPU传输
-            persistent_workers=True  # 保持worker进程
+            persistent_workers=False  # P100环境关闭持久worker
         )
         
         print(f"  📊 数据集大小: {len(dataset)} 个图像对")
         print(f"  📊 正样本对: {sum(dataset.labels)} 个")
         print(f"  📊 负样本对: {len(dataset.labels) - sum(dataset.labels)} 个")
+
+        # 小数据集批次大小优化
+        total_batches = len(dataloader)
+        if total_batches < 50:
+            print(f"  ⚠️  小数据集警告: 每epoch只有{total_batches}个batch")
+            print(f"  💡 建议: 考虑减小batch_size以增加梯度更新频率")
+
+        print(f"  🔧 训练配置: batch_size={batch_size}, 每epoch {total_batches} 个batch")
         
         # 创建优化的模型（利用闲置GPU资源）
         self.model = OptimizedSiameseNetwork(embedding_dim=256, use_larger_model=True).to(self.device)
@@ -199,8 +214,8 @@ class MetricLearningValidator:
 
         criterion = nn.MSELoss()  # 使用MSE损失，因为相似度在[-1,1]范围
 
-        # 混合精度训练（提升速度和显存效率）
-        scaler = torch.cuda.amp.GradScaler() if self.device.type == 'cuda' else None
+        # P100不使用混合精度（Pascal架构支持有限）
+        print(f"  🔧 P100优化：不使用混合精度训练")
         
         # 训练循环
         history = {'train_loss': [], 'train_acc': []}
@@ -216,24 +231,14 @@ class MetricLearningValidator:
 
                 optimizer.zero_grad()
 
-                # 混合精度前向传播
-                if scaler is not None:
-                    with torch.cuda.amp.autocast():
-                        similarity, _, _ = self.model(img1, img2)
-                        target_similarity = labels * 2.0 - 1.0  # [0,1] -> [-1,1]
-                        loss = criterion(similarity, target_similarity)
+                # 标准前向传播（P100优化）
+                similarity, _, _ = self.model(img1, img2)
+                target_similarity = labels * 2.0 - 1.0  # [0,1] -> [-1,1]
+                loss = criterion(similarity, target_similarity)
 
-                    # 混合精度反向传播
-                    scaler.scale(loss).backward()
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    # 标准训练（CPU或不支持混合精度）
-                    similarity, _, _ = self.model(img1, img2)
-                    target_similarity = labels * 2.0 - 1.0  # [0,1] -> [-1,1]
-                    loss = criterion(similarity, target_similarity)
-                    loss.backward()
-                    optimizer.step()
+                # 标准反向传播
+                loss.backward()
+                optimizer.step()
 
                 total_loss += loss.item()
 
@@ -356,8 +361,8 @@ if __name__ == "__main__":
                        help="Siamese网络训练轮数")
     parser.add_argument("--threshold", type=float, default=0.3,
                        help="相似性阈值（针对高相似性数据降低）")
-    parser.add_argument("--batch_size", type=int, default=64,
-                       help="批次大小（利用闲置显存）")
+    parser.add_argument("--batch_size", type=int, default=32,
+                       help="批次大小（小数据集推荐16-32）")
     parser.add_argument("--use_larger_model", action="store_true",
                        help="使用更大的模型（ResNet34）")
 
