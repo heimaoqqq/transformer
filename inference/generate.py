@@ -73,6 +73,14 @@ class MicroDopplerGenerator:
             num_users=num_users,
             embed_dim=self.unet.config.cross_attention_dim
         )
+        # 处理条件编码器路径 - 可能是目录或文件
+        if Path(condition_encoder_path).is_dir():
+            # 如果是目录，查找condition_encoder.pt文件
+            condition_encoder_file = Path(condition_encoder_path) / "condition_encoder.pt"
+            if not condition_encoder_file.exists():
+                raise FileNotFoundError(f"条件编码器文件不存在: {condition_encoder_file}")
+            condition_encoder_path = str(condition_encoder_file)
+
         self.condition_encoder.load_state_dict(torch.load(condition_encoder_path, map_location=device))
         self.condition_encoder.to(device)
         self.condition_encoder.eval()
@@ -281,7 +289,7 @@ def main():
     # 模型路径
     parser.add_argument("--vae_path", type=str, required=True, help="VAE模型路径")
     parser.add_argument("--unet_path", type=str, required=True, help="UNet模型路径")
-    parser.add_argument("--condition_encoder_path", type=str, required=True, help="条件编码器路径")
+    parser.add_argument("--condition_encoder_path", type=str, required=True, help="条件编码器路径 (文件或包含condition_encoder.pt的目录)")
     parser.add_argument("--num_users", type=int, required=True, help="用户总数")
     
     # 生成参数
