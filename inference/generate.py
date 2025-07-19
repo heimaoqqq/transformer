@@ -95,7 +95,15 @@ class MicroDopplerGenerator:
             print(f"  - 嵌入维度: {actual_embed_dim}")
             print(f"  - UNet期望维度: {self.unet.config.cross_attention_dim}")
 
-            # 使用实际的嵌入维度创建条件编码器
+            # 检查是否需要强制使用1024维 (临时修复)
+            if actual_embed_dim == 512 and self.unet.config.cross_attention_dim == 512:
+                # 尝试使用1024维来解决内部维度不匹配问题
+                print(f"🔧 检测到512维配置，尝试使用1024维解决内部维度问题...")
+                print(f"⚠️  注意：这将忽略预训练的条件编码器权重")
+                actual_embed_dim = 1024
+                condition_encoder_state = None  # 不加载512维的权重
+
+            # 使用确定的嵌入维度创建条件编码器
             self.condition_encoder = UserConditionEncoder(
                 num_users=num_users,
                 embed_dim=actual_embed_dim
@@ -117,7 +125,17 @@ class MicroDopplerGenerator:
             )
             self.projection_layer = None
 
-        self.condition_encoder.load_state_dict(condition_encoder_state)
+        # 加载权重（如果有的话）
+        if condition_encoder_state is not None:
+            try:
+                self.condition_encoder.load_state_dict(condition_encoder_state)
+                print(f"✅ 成功加载条件编码器权重")
+            except Exception as e:
+                print(f"⚠️  无法加载条件编码器权重: {e}")
+                print(f"   将使用随机初始化的权重")
+        else:
+            print(f"⚠️  使用随机初始化的条件编码器权重")
+
         self.condition_encoder.to(device)
         self.condition_encoder.eval()
         
