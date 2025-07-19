@@ -169,9 +169,13 @@ def generate_with_extreme_guidance(
                 # 随机噪声
                 latents = torch.randn(1, 4, 32, 32, device=device)
                 
-                # 用户条件
+                # 用户条件 (确保正确的3D形状)
                 user_tensor = torch.tensor([user_idx], device=device)
                 user_embedding = condition_encoder(user_tensor)
+
+                # 确保user_embedding是3D张量 [batch_size, sequence_length, hidden_dim]
+                if user_embedding.dim() == 2:
+                    user_embedding = user_embedding.unsqueeze(1)  # [batch_size, 1, hidden_dim]
                 
                 # 扩散过程
                 latents = latents * scheduler.init_noise_sigma
