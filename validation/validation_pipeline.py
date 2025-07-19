@@ -39,6 +39,7 @@ class ValidationConfig:
     # 生成配置
     num_images_to_generate: int = 100  # 增加到100张，获得更可靠的统计结果
     num_inference_steps: int = 50  # DDIM推理步数，建议50-200
+    batch_size: int = 10  # 批量生成大小，充分利用显存
     
     # 模型路径
     vae_path: Optional[str] = None
@@ -262,14 +263,24 @@ class ConditionalDiffusionValidator:
             self.condition_encoder.eval()
 
             with torch.no_grad():
-                for i in range(self.config.num_images_to_generate):
-                    print(f"  生成第 {i+1}/{self.config.num_images_to_generate} 张...")
+                # 批量生成配置
+                batch_size = self.config.batch_size  # 使用配置中的批量大小
+                total_images = self.config.num_images_to_generate
+                num_batches = (total_images + batch_size - 1) // batch_size
 
-                    # 随机噪声
-                    latents = torch.randn(1, 4, 32, 32, device=self.config.device)
+                print(f"  📊 批量生成配置: {batch_size}张/批, 共{num_batches}批")
 
-                    # 用户条件
-                    user_tensor = torch.tensor([user_idx], device=self.config.device)
+                image_count = 0
+                for batch_idx in range(num_batches):
+                    # 计算当前批次的实际大小
+                    current_batch_size = min(batch_size, total_images - batch_idx * batch_size)
+                    print(f"  🎨 生成批次 {batch_idx+1}/{num_batches} ({current_batch_size}张)...")
+
+                    # 批量随机噪声
+                    latents = torch.randn(current_batch_size, 4, 32, 32, device=self.config.device)
+
+                    # 批量用户条件
+                    user_tensor = torch.tensor([user_idx] * current_batch_size, device=self.config.device)
                     user_embedding = self.condition_encoder(user_tensor)
 
                     # 确保3D张量格式
@@ -280,7 +291,7 @@ class ConditionalDiffusionValidator:
                     latents = latents * self.scheduler.init_noise_sigma
 
                     for t in self.scheduler.timesteps:
-                        # 纯条件预测 (与训练时相同)
+                        # 批量纯条件预测 (与训练时相同)
                         noise_pred = self.unet(
                             latents,
                             t,
@@ -290,20 +301,23 @@ class ConditionalDiffusionValidator:
                         # 调度器步骤
                         latents = self.scheduler.step(noise_pred, t, latents).prev_sample
 
-                    # 解码为图像
+                    # 批量解码为图像
                     vae_model = self.vae.module if hasattr(self.vae, 'module') else self.vae
                     latents = latents / vae_model.config.scaling_factor
                     images = vae_model.decode(latents).sample
                     images = images.clamp(0, 1)
 
-                    # 保存图像
+                    # 批量保存图像
                     from PIL import Image
-                    image = images.cpu().permute(0, 2, 3, 1).numpy()[0]
-                    image = (image * 255).astype(np.uint8)
-                    pil_image = Image.fromarray(image)
+                    batch_images = images.cpu().permute(0, 2, 3, 1).numpy()
 
-                    save_path = gen_output_dir / f"user_{self.config.target_user_id}_generated_{i+1:02d}.png"
-                    pil_image.save(save_path)
+                    for i in range(current_batch_size):
+                        image = (batch_images[i] * 255).astype(np.uint8)
+                        pil_image = Image.fromarray(image)
+
+                        save_path = gen_output_dir / f"user_{self.config.target_user_id}_generated_{image_count+1:02d}.png"
+                        pil_image.save(save_path)
+                        image_count += 1
 
             print(f"  ✅ 生成完成，保存在: {gen_output_dir}")
             return str(gen_output_dir)
@@ -438,42 +452,46 @@ class ConditionalDiffusionValidator:
             self.condition_encoder.eval()
 
             with torch.no_grad():
+                # 对比实验也使用批量生成（数量较少，一次性生成）
+                print(f"    批量生成{num_images}张对比图像...")
+
+                # 批量随机噪声
+                latents = torch.randn(num_images, 4, 32, 32, device=self.config.device)
+
+                # 批量错误用户条件
+                user_tensor = torch.tensor([wrong_user_idx] * num_images, device=self.config.device)
+                user_embedding = self.condition_encoder(user_tensor)
+
+                # 确保3D张量格式
+                if user_embedding.dim() == 2:
+                    user_embedding = user_embedding.unsqueeze(1)
+
+                # 扩散过程
+                latents = latents * self.scheduler.init_noise_sigma
+
+                for t in self.scheduler.timesteps:
+                    # 批量纯条件预测
+                    noise_pred = self.unet(
+                        latents,
+                        t,
+                        encoder_hidden_states=user_embedding
+                    ).sample
+
+                    # 调度器步骤
+                    latents = self.scheduler.step(noise_pred, t, latents).prev_sample
+
+                # 批量解码为图像
+                vae_model = self.vae.module if hasattr(self.vae, 'module') else self.vae
+                latents = latents / vae_model.config.scaling_factor
+                images = vae_model.decode(latents).sample
+                images = images.clamp(0, 1)
+
+                # 批量保存图像
+                from PIL import Image
+                batch_images = images.cpu().permute(0, 2, 3, 1).numpy()
+
                 for i in range(num_images):
-                    # 随机噪声
-                    latents = torch.randn(1, 4, 32, 32, device=self.config.device)
-
-                    # 错误用户条件
-                    user_tensor = torch.tensor([wrong_user_idx], device=self.config.device)
-                    user_embedding = self.condition_encoder(user_tensor)
-
-                    # 确保3D张量格式
-                    if user_embedding.dim() == 2:
-                        user_embedding = user_embedding.unsqueeze(1)
-
-                    # 扩散过程
-                    latents = latents * self.scheduler.init_noise_sigma
-
-                    for t in self.scheduler.timesteps:
-                        # 纯条件预测
-                        noise_pred = self.unet(
-                            latents,
-                            t,
-                            encoder_hidden_states=user_embedding
-                        ).sample
-
-                        # 调度器步骤
-                        latents = self.scheduler.step(noise_pred, t, latents).prev_sample
-
-                    # 解码为图像
-                    vae_model = self.vae.module if hasattr(self.vae, 'module') else self.vae
-                    latents = latents / vae_model.config.scaling_factor
-                    images = vae_model.decode(latents).sample
-                    images = images.clamp(0, 1)
-
-                    # 保存图像
-                    from PIL import Image
-                    image = images.cpu().permute(0, 2, 3, 1).numpy()[0]
-                    image = (image * 255).astype(np.uint8)
+                    image = (batch_images[i] * 255).astype(np.uint8)
                     pil_image = Image.fromarray(image)
 
                     save_path = wrong_dir / f"wrong_condition_{i+1:02d}.png"
@@ -694,6 +712,8 @@ def main():
                        help="生成图像数量 (建议100+张获得可靠统计结果)")
     parser.add_argument("--num_inference_steps", type=int, default=50,
                        help="DDIM推理步数 (建议50-200)")
+    parser.add_argument("--batch_size", type=int, default=10,
+                       help="批量生成大小 (根据显存调整，建议8-16)")
 
     # 模型路径
     parser.add_argument("--vae_path", type=str,
@@ -717,6 +737,7 @@ def main():
         confidence_threshold=args.confidence_threshold,
         num_images_to_generate=args.num_images_to_generate,
         num_inference_steps=args.num_inference_steps,
+        batch_size=args.batch_size,
         vae_path=args.vae_path,
         unet_path=args.unet_path,
         condition_encoder_path=args.condition_encoder_path,
@@ -730,7 +751,7 @@ def main():
     print(f"  输出目录: {config.output_dir}")
     print(f"  分类器: 标准ResNet-18, epochs={config.classifier_epochs}, batch_size={config.classifier_batch_size}")
     if args.generate_images:
-        print(f"  生成: 纯条件生成, steps={config.num_inference_steps}")
+        print(f"  生成: 纯条件生成, steps={config.num_inference_steps}, batch_size={config.batch_size}")
         print(f"  模型: VAE={config.vae_path is not None}, UNet={config.unet_path is not None}")
     print("=" * 60)
 
