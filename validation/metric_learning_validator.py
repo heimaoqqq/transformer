@@ -68,78 +68,34 @@ class SiameseDataset(Dataset):
         
         return img1, img2, label
 
-class ImprovedSiameseNetwork(nn.Module):
-    """改进的Siamese网络 - 专门处理相似特征的小数据问题"""
+class SimplifiedSiameseNetwork(nn.Module):
+    """简化的Siamese网络 - 稳定可靠的实现"""
 
-    def __init__(self, embedding_dim=256):
-        super(ImprovedSiameseNetwork, self).__init__()
+    def __init__(self, embedding_dim=128):
+        super(SimplifiedSiameseNetwork, self).__init__()
 
-        # 使用更深的网络提取细微特征
-        from torchvision.models import resnet50
-        self.backbone = resnet50(pretrained=True)
+        # 使用ResNet18，更稳定
+        self.backbone = resnet18(pretrained=True)
 
-        # 移除最后的分类层
-        self.backbone.fc = nn.Identity()
-
-        # 多尺度特征提取
-        self.multi_scale = nn.ModuleList([
-            nn.AdaptiveAvgPool2d((1, 1)),  # 全局特征
-            nn.AdaptiveAvgPool2d((2, 2)),  # 中等尺度
-            nn.AdaptiveAvgPool2d((4, 4)),  # 细粒度特征
-        ])
-
-        # 注意力机制 - 聚焦关键特征
-        self.attention = nn.MultiheadAttention(embed_dim=2048, num_heads=8, batch_first=True)
-
-        # 特征融合和降维
-        self.feature_fusion = nn.Sequential(
-            nn.Linear(2048 * (1 + 4 + 16), 1024),  # 多尺度特征融合
-            nn.ReLU(),
+        # 替换最后的分类层
+        in_features = self.backbone.fc.in_features
+        self.backbone.fc = nn.Sequential(
             nn.Dropout(0.3),
-            nn.Linear(1024, embedding_dim),
+            nn.Linear(in_features, embedding_dim),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(embedding_dim, embedding_dim)
         )
 
-        # 学习如何比较特征（而不是简单的余弦相似度）
-        self.relation_module = nn.Sequential(
-            nn.Linear(embedding_dim * 2, 512),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(256, 1),
-            nn.Sigmoid()
-        )
+        # 相似性计算
+        self.similarity = nn.CosineSimilarity(dim=1)
         
-    def extract_deep_features(self, x):
-        """提取深层多尺度特征"""
-        # 通过backbone提取基础特征
-        features = self.backbone(x)  # [batch, 2048, 7, 7]
-
-        # 多尺度特征提取
-        multi_scale_features = []
-        for pool in self.multi_scale:
-            pooled = pool(features)  # [batch, 2048, scale, scale]
-            flattened = pooled.view(pooled.size(0), -1)  # [batch, 2048*scale*scale]
-            multi_scale_features.append(flattened)
-
-        # 拼接多尺度特征
-        combined_features = torch.cat(multi_scale_features, dim=1)  # [batch, 2048*(1+4+16)]
-
-        # 特征融合
-        fused_features = self.feature_fusion(combined_features)  # [batch, embedding_dim]
-
-        return fused_features
-
     def forward_one(self, x):
         """单个图像的前向传播"""
-        return self.extract_deep_features(x)
+        return self.backbone(x)
 
     def forward(self, img1, img2):
-        """计算两个图像的相似性 - 使用学习的关系模块"""
+        """计算两个图像的相似性"""
         emb1 = self.forward_one(img1)
         emb2 = self.forward_one(img2)
 
@@ -147,9 +103,8 @@ class ImprovedSiameseNetwork(nn.Module):
         emb1 = F.normalize(emb1, p=2, dim=1)
         emb2 = F.normalize(emb2, p=2, dim=1)
 
-        # 使用关系模块学习如何比较特征
-        combined = torch.cat([emb1, emb2], dim=1)
-        similarity = self.relation_module(combined).squeeze()
+        # 余弦相似性
+        similarity = self.similarity(emb1, emb2)
 
         return similarity, emb1, emb2
 
@@ -205,12 +160,12 @@ class MetricLearningValidator:
         print(f"  📊 正样本对: {sum(dataset.labels)} 个")
         print(f"  📊 负样本对: {len(dataset.labels) - sum(dataset.labels)} 个")
         
-        # 创建改进的模型
-        self.model = ImprovedSiameseNetwork().to(self.device)
+        # 创建简化的模型
+        self.model = SimplifiedSiameseNetwork().to(self.device)
         
         # 优化器和损失函数
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=1e-4)
-        criterion = nn.BCEWithLogitsLoss()
+        criterion = nn.MSELoss()  # 使用MSE损失，因为相似度在[-1,1]范围
         
         # 训练循环
         history = {'train_loss': [], 'train_acc': []}
@@ -228,16 +183,19 @@ class MetricLearningValidator:
                 
                 # 前向传播
                 similarity, _, _ = self.model(img1, img2)
-                
+
+                # 将标签转换为相似度目标：1->1.0, 0->-1.0
+                target_similarity = labels * 2.0 - 1.0  # [0,1] -> [-1,1]
+
                 # 损失计算
-                loss = criterion(similarity, labels)
+                loss = criterion(similarity, target_similarity)
                 loss.backward()
                 optimizer.step()
-                
+
                 total_loss += loss.item()
-                
-                # 准确率计算
-                predicted = (torch.sigmoid(similarity) > 0.5).float()
+
+                # 准确率计算：相似度>0认为是同一用户
+                predicted = (similarity > 0).float()
                 correct += (predicted == labels).sum().item()
                 total += labels.size(0)
             
