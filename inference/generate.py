@@ -85,11 +85,37 @@ class MicroDopplerGenerator:
         self.condition_encoder.to(device)
         self.condition_encoder.eval()
         
-        # 创建调度器
+        # 创建调度器 - 使用与训练时相同的配置
         if scheduler_type == "ddim":
-            self.scheduler = DDIMScheduler.from_pretrained(unet_path, subfolder="scheduler")
+            # 先创建DDPM调度器配置，然后转换为DDIM
+            ddpm_scheduler = DDPMScheduler(
+                num_train_timesteps=1000,
+                beta_start=0.00085,
+                beta_end=0.012,
+                beta_schedule="scaled_linear",
+                variance_type="fixed_small",
+                clip_sample=False,
+                prediction_type="epsilon",
+                thresholding=False,
+                dynamic_thresholding_ratio=0.995,
+                clip_sample_range=1.0,
+                sample_max_value=1.0,
+            )
+            self.scheduler = DDIMScheduler.from_config(ddpm_scheduler.config)
         else:
-            self.scheduler = DDPMScheduler.from_pretrained(unet_path, subfolder="scheduler")
+            self.scheduler = DDPMScheduler(
+                num_train_timesteps=1000,
+                beta_start=0.00085,
+                beta_end=0.012,
+                beta_schedule="scaled_linear",
+                variance_type="fixed_small",
+                clip_sample=False,
+                prediction_type="epsilon",
+                thresholding=False,
+                dynamic_thresholding_ratio=0.995,
+                clip_sample_range=1.0,
+                sample_max_value=1.0,
+            )
         
         print(f"Generator initialized with {scheduler_type} scheduler")
     
@@ -121,10 +147,12 @@ class MicroDopplerGenerator:
         if isinstance(user_ids, int):
             user_ids = [user_ids]
         
-        # 验证用户ID
+        # 验证用户ID - 考虑用户ID映射
         for user_id in user_ids:
-            if user_id < 0 or user_id >= self.num_users:
-                raise ValueError(f"Invalid user_id {user_id}. Must be in range [0, {self.num_users-1}]")
+            # 获取实际的用户索引
+            user_idx = self.user_id_mapping.get(user_id, user_id - 1 if user_id > 0 else 0)
+            if user_idx < 0 or user_idx >= self.num_users:
+                raise ValueError(f"Invalid user_id {user_id} (mapped to index {user_idx}). Index must be in range [0, {self.num_users-1}]")
         
         # 设置调度器
         self.scheduler.set_timesteps(num_inference_steps)
@@ -302,6 +330,7 @@ def main():
     # 输出参数
     parser.add_argument("--output_dir", type=str, default="./generated_images", help="输出目录")
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
+    parser.add_argument("--device", type=str, default="auto", help="设备 (cuda/cpu/auto，默认auto自动检测)")
     
     # 特殊功能
     parser.add_argument("--interpolation", action="store_true", help="生成插值图像")
@@ -309,7 +338,19 @@ def main():
     parser.add_argument("--interpolation_steps", type=int, default=10, help="插值步数")
     
     args = parser.parse_args()
-    
+
+    # 设备自动检测
+    if args.device == "auto":
+        if torch.cuda.is_available():
+            device = "cuda"
+            print(f"🚀 自动检测到CUDA设备，使用GPU加速")
+        else:
+            device = "cpu"
+            print(f"💻 未检测到CUDA设备，使用CPU")
+    else:
+        device = args.device
+        print(f"🔧 使用指定设备: {device}")
+
     # 设置随机种子
     if args.seed is not None:
         torch.manual_seed(args.seed)
@@ -328,6 +369,7 @@ def main():
         unet_path=args.unet_path,
         condition_encoder_path=args.condition_encoder_path,
         num_users=args.num_users,
+        device=device,
         scheduler_type=args.scheduler_type
     )
     
