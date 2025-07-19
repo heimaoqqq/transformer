@@ -11,7 +11,7 @@ from PIL import Image
 from pathlib import Path
 import argparse
 import json
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 from tqdm import tqdm
 
 from diffusers import AutoencoderKL, UNet2DConditionModel, DDIMScheduler, DDPMScheduler

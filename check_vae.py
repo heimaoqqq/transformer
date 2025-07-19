@@ -106,7 +106,6 @@ class VAEChecker:
                 for i, idx in enumerate(indices):
                     sample = dataset[idx]
                     original = sample['image'].unsqueeze(0).to(self.device)
-                    user_id = sample.get('user_id', f'sample_{idx}')
 
                     # VAE重建
                     posterior = vae.encode(original).latent_dist
@@ -217,7 +216,6 @@ class VAEChecker:
                 for i, idx in enumerate(indices):
                     sample = dataset[idx]
                     original = sample['image'].unsqueeze(0).to(self.device)
-                    user_id = sample.get('user_id', f'sample_{idx}')
 
                     # VAE重建
                     posterior = vae.encode(original).latent_dist
@@ -239,7 +237,7 @@ class VAEChecker:
 
                     plt.subplot(1, 2, 1)
                     plt.imshow(orig_np)
-                    plt.title(f'原始图像 (User: {user_id})', fontsize=14)
+                    plt.title(f'原始图像 (Sample: {idx})', fontsize=14)
                     plt.axis('off')
 
                     plt.subplot(1, 2, 2)
