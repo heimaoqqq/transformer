@@ -188,17 +188,18 @@ class UserValidationSystem:
         # 存储训练好的分类器
         self.classifiers = {}
     
-    def prepare_user_data(self, user_id: int, real_images_dir: str, other_users_dirs: List[str], 
-                         max_samples_per_class: int = 500) -> Tuple[List[str], List[int]]:
+    def prepare_user_data(self, user_id: int, real_images_dir: str, other_users_dirs: List[str],
+                         max_samples_per_class: int = 500, negative_ratio: float = 3.0) -> Tuple[List[str], List[int]]:
         """
         为指定用户准备训练数据
-        
+
         Args:
             user_id: 用户ID
             real_images_dir: 该用户真实图像目录
             other_users_dirs: 其他用户图像目录列表
-            max_samples_per_class: 每类最大样本数
-            
+            max_samples_per_class: 正样本最大数量
+            negative_ratio: 负样本与正样本的比例 (默认3:1)
+
         Returns:
             (image_paths, labels): 图像路径列表和标签列表
         """
@@ -218,24 +219,30 @@ class UserValidationSystem:
         else:
             print(f"  警告: 用户 {user_id} 真实图像目录不存在: {real_dir}")
         
-        # 负样本: 其他用户的图像
-        negative_count = 0
+        # 负样本: 其他用户的图像 (改进的采样策略)
+        max_negative_samples = int(len(real_images) * negative_ratio)
+        print(f"  目标负样本数量: {max_negative_samples} 张 (比例 {negative_ratio}:1)")
+
+        # 收集所有其他用户的图像
+        all_negative_images = []
         for other_dir in other_users_dirs:
-            if negative_count >= max_samples_per_class:
-                break
-                
             other_path = Path(other_dir)
             if other_path.exists():
                 other_images = list(other_path.glob("*.png")) + list(other_path.glob("*.jpg"))
-                
-                # 限制每个其他用户的样本数量，确保负样本总数不超过限制
-                remaining_slots = max_samples_per_class - negative_count
-                other_images = other_images[:remaining_slots]
-                
-                image_paths.extend([str(p) for p in other_images])
-                labels.extend([0] * len(other_images))
-                
-                negative_count += len(other_images)
+                all_negative_images.extend(other_images)
+
+        # 随机采样负样本，确保代表性
+        import random
+        if len(all_negative_images) > max_negative_samples:
+            selected_negative = random.sample(all_negative_images, max_negative_samples)
+        else:
+            selected_negative = all_negative_images
+            print(f"  警告: 可用负样本({len(all_negative_images)})少于目标数量({max_negative_samples})")
+
+        # 添加负样本
+        image_paths.extend([str(p) for p in selected_negative])
+        labels.extend([0] * len(selected_negative))
+        negative_count = len(selected_negative)
         
         print(f"  用户 {user_id} 负样本: {negative_count} 张")
         print(f"  用户 {user_id} 总样本: {len(image_paths)} 张")

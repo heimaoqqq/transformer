@@ -222,34 +222,15 @@ class ConditionalDiffusionValidator:
         if target_user_dir is None:
             print(f"❌ 未找到用户 {self.config.target_user_id} 的数据目录")
             return [], []
-        
-        image_paths = []
-        labels = []
-        
-        # 正样本 (目标用户)
-        target_images = list(target_user_dir.glob("*.png")) + list(target_user_dir.glob("*.jpg"))
-        target_images = target_images[:self.config.max_samples_per_class]
-        
-        for img_path in target_images:
-            image_paths.append(str(img_path))
-            labels.append(1)  # 正类
-        
-        # 负样本 (其他用户)
-        negative_count = 0
-        for other_dir in other_user_dirs:
-            if negative_count >= self.config.max_samples_per_class:
-                break
-            
-            other_images = list(other_dir.glob("*.png")) + list(other_dir.glob("*.jpg"))
-            for img_path in other_images:
-                if negative_count >= self.config.max_samples_per_class:
-                    break
-                image_paths.append(str(img_path))
-                labels.append(0)  # 负类
-                negative_count += 1
-        
-        print(f"  📊 数据统计: 正样本 {sum(labels)}, 负样本 {len(labels) - sum(labels)}")
-        return image_paths, labels
+
+        # 使用改进的数据准备方法
+        return self.validation_system.prepare_user_data(
+            user_id=self.config.target_user_id,
+            real_images_dir=str(target_user_dir),
+            other_users_dirs=[str(d) for d in other_user_dirs],
+            max_samples_per_class=self.config.max_samples_per_class,
+            negative_ratio=3.0  # 负样本是正样本的3倍
+        )
 
     def generate_images(self) -> Optional[str]:
         """生成指定用户的图像"""
