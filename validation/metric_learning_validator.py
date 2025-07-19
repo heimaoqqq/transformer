@@ -68,20 +68,31 @@ class SiameseDataset(Dataset):
         
         return img1, img2, label
 
-class SimplifiedSiameseNetwork(nn.Module):
-    """简化的Siamese网络 - 稳定可靠的实现"""
+class OptimizedSiameseNetwork(nn.Module):
+    """优化的Siamese网络 - 利用更多GPU资源"""
 
-    def __init__(self, embedding_dim=128):
-        super(SimplifiedSiameseNetwork, self).__init__()
+    def __init__(self, embedding_dim=256, use_larger_model=True):
+        super(OptimizedSiameseNetwork, self).__init__()
 
-        # 使用ResNet18，更稳定
-        self.backbone = resnet18(pretrained=True)
+        # 根据GPU资源选择模型大小
+        if use_larger_model:
+            from torchvision.models import resnet34
+            self.backbone = resnet34(pretrained=True)
+            print("  🚀 使用ResNet34（更大模型，利用闲置GPU资源）")
+        else:
+            self.backbone = resnet18(pretrained=True)
+            print("  🚀 使用ResNet18（标准模型）")
 
-        # 替换最后的分类层
+        # 更深的特征提取头
         in_features = self.backbone.fc.in_features
         self.backbone.fc = nn.Sequential(
+            nn.Dropout(0.4),
+            nn.Linear(in_features, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(in_features, embedding_dim),
+            nn.Linear(512, embedding_dim),
+            nn.BatchNorm1d(embedding_dim),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(embedding_dim, embedding_dim)
@@ -147,25 +158,49 @@ class MetricLearningValidator:
         
         return user_images
     
-    def train_siamese_network(self, user_images: Dict[int, List[str]], 
-                            epochs: int = 50, batch_size: int = 32) -> Dict:
+    def train_siamese_network(self, user_images: Dict[int, List[str]],
+                            epochs: int = 50, batch_size: int = 64) -> Dict:
         """训练Siamese网络"""
         print(f"\n🎯 训练Siamese网络...")
         
-        # 创建数据集
+        # 创建数据集（优化数据加载）
         dataset = SiameseDataset(user_images, self.transform)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=2)
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=4,  # 增加数据加载线程
+            pin_memory=True,  # 加速GPU传输
+            persistent_workers=True  # 保持worker进程
+        )
         
         print(f"  📊 数据集大小: {len(dataset)} 个图像对")
         print(f"  📊 正样本对: {sum(dataset.labels)} 个")
         print(f"  📊 负样本对: {len(dataset.labels) - sum(dataset.labels)} 个")
         
-        # 创建简化的模型
-        self.model = SimplifiedSiameseNetwork().to(self.device)
+        # 创建优化的模型（利用闲置GPU资源）
+        self.model = OptimizedSiameseNetwork(embedding_dim=256, use_larger_model=True).to(self.device)
         
-        # 优化器和损失函数
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=1e-4)
+        # 优化器和损失函数（优化配置）
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=2e-3,  # 提高学习率，加速收敛
+            weight_decay=1e-4,
+            betas=(0.9, 0.999),
+            eps=1e-8
+        )
+
+        # 学习率调度器
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=epochs,
+            eta_min=1e-6
+        )
+
         criterion = nn.MSELoss()  # 使用MSE损失，因为相似度在[-1,1]范围
+
+        # 混合精度训练（提升速度和显存效率）
+        scaler = torch.cuda.amp.GradScaler() if self.device.type == 'cuda' else None
         
         # 训练循环
         history = {'train_loss': [], 'train_acc': []}
@@ -177,20 +212,28 @@ class MetricLearningValidator:
             total = 0
             
             for img1, img2, labels in tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs}"):
-                img1, img2, labels = img1.to(self.device), img2.to(self.device), labels.float().to(self.device)
-                
+                img1, img2, labels = img1.to(self.device, non_blocking=True), img2.to(self.device, non_blocking=True), labels.float().to(self.device, non_blocking=True)
+
                 optimizer.zero_grad()
-                
-                # 前向传播
-                similarity, _, _ = self.model(img1, img2)
 
-                # 将标签转换为相似度目标：1->1.0, 0->-1.0
-                target_similarity = labels * 2.0 - 1.0  # [0,1] -> [-1,1]
+                # 混合精度前向传播
+                if scaler is not None:
+                    with torch.cuda.amp.autocast():
+                        similarity, _, _ = self.model(img1, img2)
+                        target_similarity = labels * 2.0 - 1.0  # [0,1] -> [-1,1]
+                        loss = criterion(similarity, target_similarity)
 
-                # 损失计算
-                loss = criterion(similarity, target_similarity)
-                loss.backward()
-                optimizer.step()
+                    # 混合精度反向传播
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    # 标准训练（CPU或不支持混合精度）
+                    similarity, _, _ = self.model(img1, img2)
+                    target_similarity = labels * 2.0 - 1.0  # [0,1] -> [-1,1]
+                    loss = criterion(similarity, target_similarity)
+                    loss.backward()
+                    optimizer.step()
 
                 total_loss += loss.item()
 
@@ -198,6 +241,9 @@ class MetricLearningValidator:
                 predicted = (similarity > 0).float()
                 correct += (predicted == labels).sum().item()
                 total += labels.size(0)
+
+            # 更新学习率
+            scheduler.step()
             
             avg_loss = total_loss / len(dataloader)
             accuracy = correct / total
@@ -308,8 +354,12 @@ if __name__ == "__main__":
                        help="生成图像目录路径")
     parser.add_argument("--epochs", type=int, default=30,
                        help="Siamese网络训练轮数")
-    parser.add_argument("--threshold", type=float, default=0.7,
-                       help="相似性阈值")
+    parser.add_argument("--threshold", type=float, default=0.3,
+                       help="相似性阈值（针对高相似性数据降低）")
+    parser.add_argument("--batch_size", type=int, default=64,
+                       help="批次大小（利用闲置显存）")
+    parser.add_argument("--use_larger_model", action="store_true",
+                       help="使用更大的模型（ResNet34）")
 
     args = parser.parse_args()
 
@@ -329,8 +379,12 @@ if __name__ == "__main__":
         print("❌ 未找到用户数据，请检查数据目录路径")
         exit(1)
 
-    # 训练Siamese网络
-    history = validator.train_siamese_network(user_images, epochs=args.epochs)
+    # 训练Siamese网络（使用优化参数）
+    history = validator.train_siamese_network(
+        user_images,
+        epochs=args.epochs,
+        batch_size=args.batch_size
+    )
 
     # 计算用户原型
     validator.compute_user_prototypes(user_images)
