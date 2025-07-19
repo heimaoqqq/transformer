@@ -78,33 +78,8 @@ class UserClassifier(nn.Module):
         self.dropout = nn.Dropout(0.5)
         
     def forward(self, x):
-        # 通过骨干网络
-        features = self.backbone.avgpool(self.backbone.layer4(
-            self.backbone.layer3(
-                self.backbone.layer2(
-                    self.backbone.layer1(
-                        self.backbone.maxpool(
-                            self.backbone.relu(
-                                self.backbone.bn1(
-                                    self.backbone.conv1(x)
-                                )
-                            )
-                        )
-                    )
-                )
-            )
-        ))
-        
-        # 展平特征
-        features = torch.flatten(features, 1)
-        
-        # 应用dropout
-        features = self.dropout(features)
-        
-        # 分类
-        output = self.backbone.fc(features)
-        
-        return output
+        # 直接使用ResNet的forward方法，更简单可靠
+        return self.backbone(x)
 
 class UserValidationSystem:
     """用户验证系统"""
@@ -121,11 +96,11 @@ class UserValidationSystem:
         
         print(f"🚀 使用设备: {self.device}")
         
-        # 图像变换 (参考项目中的标准配置)
+        # 图像变换 (与训练数据保持一致)
         self.transform = transforms.Compose([
-            transforms.Resize((64, 64)),  # 调整到64x64 (与生成图像尺寸匹配)
+            transforms.Resize((128, 128), interpolation=transforms.InterpolationMode.LANCZOS),  # 与训练时一致
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # 标准化到[-1, 1]
+            # 不使用归一化，与训练数据保持一致 (训练数据在[0,1]范围)
         ])
         
         # 存储训练好的分类器
