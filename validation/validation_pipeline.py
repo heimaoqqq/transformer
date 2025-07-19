@@ -350,11 +350,15 @@ class ConditionalDiffusionValidator:
             # 2. 对比控制实验
             control_result = self._controlled_validation_experiment(generated_images_dir)
 
-            # 3. 合并结果
+            # 3. 全用户对比矩阵验证（可选，更全面）
+            matrix_result = self._full_user_matrix_validation()
+
+            # 4. 合并结果
             result = {
                 'basic_validation': basic_result,
                 'control_experiment': control_result,
-                'overall_success': self._evaluate_overall_success(basic_result, control_result)
+                'user_matrix_validation': matrix_result,
+                'overall_success': self._evaluate_overall_success(basic_result, control_result, matrix_result)
             }
 
             # 保存验证结果
@@ -375,9 +379,18 @@ class ConditionalDiffusionValidator:
         print(f"  🧪 执行对比控制实验...")
 
         try:
-            # 1. 生成错误条件的图像作为对比
-            wrong_user_ids = [uid for uid in self.user_id_mapping.keys()
-                            if uid != self.config.target_user_id][:3]  # 选择3个其他用户
+            # 1. 对比所有其他用户（更严格的验证）
+            all_other_users = [uid for uid in self.user_id_mapping.keys()
+                             if uid != self.config.target_user_id]
+
+            # 如果用户太多，随机选择最多10个进行对比（平衡严格性和效率）
+            import random
+            if len(all_other_users) > 10:
+                wrong_user_ids = random.sample(all_other_users, 10)
+                print(f"    从{len(all_other_users)}个其他用户中随机选择10个进行对比")
+            else:
+                wrong_user_ids = all_other_users
+                print(f"    对比所有{len(wrong_user_ids)}个其他用户")
 
             control_results = {}
 
@@ -493,7 +506,80 @@ class ConditionalDiffusionValidator:
             print(f"    ❌ 生成错误条件图像失败: {e}")
             return None
 
-    def _evaluate_overall_success(self, basic_result: Dict, control_result: Dict) -> Dict:
+    def _full_user_matrix_validation(self) -> Dict:
+        """全用户对比矩阵验证 - 最严格的验证方法"""
+        print(f"  📊 执行全用户矩阵验证...")
+
+        try:
+            all_users = list(self.user_id_mapping.keys())
+            target_user = self.config.target_user_id
+
+            # 限制验证规模（避免计算量过大）
+            if len(all_users) > 8:
+                print(f"    用户数量({len(all_users)})较多，跳过矩阵验证以节省时间")
+                return {'skipped': True, 'reason': 'too_many_users'}
+
+            print(f"    为所有{len(all_users)}个用户生成图像并交叉验证...")
+
+            # 生成所有用户的图像
+            user_images = {}
+            for user_id in all_users:
+                print(f"      生成用户{user_id}的图像...")
+                images_dir = self._generate_wrong_condition_images(user_id, num_images=2)
+                if images_dir:
+                    user_images[user_id] = images_dir
+
+            # 用目标用户的分类器验证所有生成图像
+            validation_matrix = {}
+            for generated_user_id, images_dir in user_images.items():
+                result = self.validation_system.validate_generated_images(
+                    user_id=target_user,  # 始终用目标用户的分类器
+                    generated_images_dir=images_dir,
+                    confidence_threshold=self.config.confidence_threshold
+                )
+                validation_matrix[generated_user_id] = result.get('success_rate', 0)
+
+            # 分析结果
+            target_success_rate = validation_matrix.get(target_user, 0)
+            other_success_rates = [rate for uid, rate in validation_matrix.items() if uid != target_user]
+
+            if other_success_rates:
+                avg_other_success_rate = sum(other_success_rates) / len(other_success_rates)
+                max_other_success_rate = max(other_success_rates)
+
+                # 计算各种对比指标
+                avg_ratio = target_success_rate / (avg_other_success_rate + 1e-6)
+                max_ratio = target_success_rate / (max_other_success_rate + 1e-6)
+
+                # 严格标准：目标用户应该明显好于所有其他用户
+                matrix_success = (
+                    target_success_rate >= 0.6 and  # 目标用户成功率足够高
+                    avg_ratio >= 2.0 and           # 平均比其他用户好2倍
+                    max_ratio >= 1.5                # 比最好的其他用户也要好1.5倍
+                )
+
+                return {
+                    'validation_matrix': validation_matrix,
+                    'target_user_success_rate': target_success_rate,
+                    'avg_other_success_rate': avg_other_success_rate,
+                    'max_other_success_rate': max_other_success_rate,
+                    'avg_ratio': avg_ratio,
+                    'max_ratio': max_ratio,
+                    'matrix_validation_success': matrix_success,
+                    'criteria': {
+                        'min_target_success_rate': 0.6,
+                        'min_avg_ratio': 2.0,
+                        'min_max_ratio': 1.5
+                    }
+                }
+            else:
+                return {'error': 'No other users to compare'}
+
+        except Exception as e:
+            print(f"    ❌ 矩阵验证失败: {e}")
+            return {'error': str(e)}
+
+    def _evaluate_overall_success(self, basic_result: Dict, control_result: Dict, matrix_result: Dict = None) -> Dict:
         """评估整体验证成功性"""
         # 基础验证指标
         basic_success_rate = basic_result.get('success_rate', 0)
@@ -503,14 +589,20 @@ class ConditionalDiffusionValidator:
         control_effective = control_result.get('control_effective', False)
         condition_ratio = control_result.get('condition_control_ratio', 0)
 
-        # 综合评估
+        # 矩阵验证指标（如果可用）
+        matrix_success = True  # 默认通过
+        if matrix_result and 'matrix_validation_success' in matrix_result:
+            matrix_success = matrix_result.get('matrix_validation_success', False)
+
+        # 综合评估（更严格的标准）
         overall_success = (
             basic_success_rate >= 0.6 and
             basic_avg_confidence >= 0.7 and
-            control_effective
+            control_effective and
+            matrix_success  # 如果有矩阵验证，也必须通过
         )
 
-        return {
+        result = {
             'overall_success': overall_success,
             'basic_success_rate': basic_success_rate,
             'basic_avg_confidence': basic_avg_confidence,
@@ -522,6 +614,13 @@ class ConditionalDiffusionValidator:
                 'min_control_ratio': 2.0
             }
         }
+
+        # 添加矩阵验证结果（如果有）
+        if matrix_result and 'matrix_validation_success' in matrix_result:
+            result['matrix_validation_success'] = matrix_success
+            result['evaluation_criteria']['matrix_validation_required'] = True
+
+        return result
 
     def run_full_pipeline(self, generate_images: bool = True) -> Dict:
         """运行完整的验证流程"""
