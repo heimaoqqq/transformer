@@ -39,7 +39,11 @@ def find_user_directory(data_root: str, user_id: int):
 def load_and_analyze_images(user_dir: Path, max_samples: int = 20):
     """加载并分析用户图像"""
     image_files = list(user_dir.glob("*.png")) + list(user_dir.glob("*.jpg"))
-    
+
+    if not image_files:
+        print(f"⚠️  在目录 {user_dir} 中未找到图像文件")
+        return np.array([])
+
     images = []
     for img_file in image_files[:max_samples]:
         try:
@@ -49,7 +53,11 @@ def load_and_analyze_images(user_dir: Path, max_samples: int = 20):
             images.append(img_array)
         except Exception as e:
             print(f"⚠️  加载图像失败 {img_file}: {e}")
-    
+
+    if not images:
+        print(f"⚠️  未能成功加载任何图像")
+        return np.array([])
+
     return np.array(images)
 
 def calculate_image_statistics(images):

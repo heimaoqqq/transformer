@@ -57,21 +57,42 @@ def analyze_frequency_domain_differences(data_root: str, user_ids: list = [1, 2]
         images = load_and_analyze_images(user_dir, max_samples=10)
         if len(images) == 0:
             return None
-        
+
+        print(f"    加载了 {len(images)} 张图像，形状: {images.shape}")
+
         # 分析频域特征
         mean_img = np.mean(images, axis=0)
-        
+        print(f"    平均图像形状: {mean_img.shape}")
+
+        # 确保图像是2D的（灰度图或RGB的一个通道）
+        if len(mean_img.shape) == 3:
+            # 如果是RGB图像，转换为灰度
+            mean_img = np.mean(mean_img, axis=2)
+            print(f"    转换为灰度图，新形状: {mean_img.shape}")
+
         # 计算频率轴和时间轴的能量分布
-        freq_profile = np.mean(mean_img, axis=1)  # 沿时间轴平均
-        time_profile = np.mean(mean_img, axis=0)  # 沿频率轴平均
+        if len(mean_img.shape) == 2:
+            freq_profile = np.mean(mean_img, axis=1)  # 沿时间轴平均
+            time_profile = np.mean(mean_img, axis=0)  # 沿频率轴平均
+        else:
+            print(f"    ⚠️  图像维度异常: {mean_img.shape}")
+            return None
         
         # 计算主要频率成分
-        freq_peak_idx = np.argmax(freq_profile)
-        freq_peak_value = freq_profile[freq_peak_idx]
-        
+        if len(freq_profile) > 0:
+            freq_peak_idx = np.argmax(freq_profile)
+            freq_peak_value = freq_profile[freq_peak_idx]
+        else:
+            freq_peak_idx = 0
+            freq_peak_value = 0.0
+
         # 计算频率分布的统计特征
-        freq_centroid = np.sum(freq_profile * np.arange(len(freq_profile))) / np.sum(freq_profile)
-        freq_spread = np.sqrt(np.sum(((np.arange(len(freq_profile)) - freq_centroid) ** 2) * freq_profile) / np.sum(freq_profile))
+        if len(freq_profile) > 0 and np.sum(freq_profile) > 0:
+            freq_centroid = np.sum(freq_profile * np.arange(len(freq_profile))) / np.sum(freq_profile)
+            freq_spread = np.sqrt(np.sum(((np.arange(len(freq_profile)) - freq_centroid) ** 2) * freq_profile) / np.sum(freq_profile))
+        else:
+            freq_centroid = 0.0
+            freq_spread = 0.0
         
         return {
             'mean_img': mean_img,
