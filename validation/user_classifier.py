@@ -244,7 +244,7 @@ class UserValidationSystem:
     
     def train_user_classifier(self, user_id: int, image_paths: List[str], labels: List[int],
                             epochs: int = 20, batch_size: int = 32, learning_rate: float = 1e-3,
-                            validation_split: float = 0.2, model_type: str = "resnet") -> Dict:
+                            validation_split: float = 0.2) -> Dict:
         """
         训练用户分类器
         

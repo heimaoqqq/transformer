@@ -747,7 +747,7 @@ def main():
     print(f"  目标用户: {config.target_user_id}")
     print(f"  数据目录: {config.real_data_root}")
     print(f"  输出目录: {config.output_dir}")
-    print(f"  分类器: {config.model_type}, epochs={config.classifier_epochs}, batch_size={config.classifier_batch_size}")
+    print(f"  分类器: 标准ResNet-18, epochs={config.classifier_epochs}, batch_size={config.classifier_batch_size}")
     if args.generate_images:
         print(f"  生成: 纯条件生成, steps={config.num_inference_steps}")
         print(f"  模型: VAE={config.vae_path is not None}, UNet={config.unet_path is not None}")
