@@ -35,6 +35,7 @@ class ValidationConfig:
     classifier_lr: float = 5e-4
     max_samples_per_class: int = 1000
     confidence_threshold: float = 0.8
+    model_type: str = "microdoppler"  # resnet 或 microdoppler
     
     # 生成配置
     num_images_to_generate: int = 16
@@ -162,7 +163,8 @@ class ConditionalDiffusionValidator:
                 labels=labels,
                 epochs=self.config.classifier_epochs,
                 batch_size=self.config.classifier_batch_size,
-                learning_rate=self.config.classifier_lr
+                learning_rate=self.config.classifier_lr,
+                model_type=self.config.model_type
             )
             
             # 保存训练曲线
@@ -433,6 +435,9 @@ def main():
                        help="每类最大样本数")
     parser.add_argument("--confidence_threshold", type=float, default=0.8,
                        help="置信度阈值")
+    parser.add_argument("--model_type", type=str, default="microdoppler",
+                       choices=["resnet", "microdoppler"],
+                       help="分类器模型类型 (resnet: ResNet-18, microdoppler: 微多普勒专用CNN)")
 
     # 生成配置
     parser.add_argument("--generate_images", action="store_true",
@@ -464,6 +469,7 @@ def main():
         classifier_lr=args.classifier_lr,
         max_samples_per_class=args.max_samples_per_class,
         confidence_threshold=args.confidence_threshold,
+        model_type=args.model_type,
         num_images_to_generate=args.num_images_to_generate,
         guidance_scale=args.guidance_scale,
         num_inference_steps=args.num_inference_steps,
@@ -478,7 +484,7 @@ def main():
     print(f"  目标用户: {config.target_user_id}")
     print(f"  数据目录: {config.real_data_root}")
     print(f"  输出目录: {config.output_dir}")
-    print(f"  分类器: epochs={config.classifier_epochs}, batch_size={config.classifier_batch_size}")
+    print(f"  分类器: {config.model_type}, epochs={config.classifier_epochs}, batch_size={config.classifier_batch_size}")
     if args.generate_images:
         print(f"  生成: guidance_scale={config.guidance_scale}, steps={config.num_inference_steps}")
         print(f"  模型: VAE={config.vae_path is not None}, UNet={config.unet_path is not None}")
