@@ -137,14 +137,13 @@ def generate_with_extreme_guidance(
         unet = unet.to(device)
         condition_encoder = condition_encoder.to(device)
         
-        # 创建调度器
+        # 创建调度器 (移除不支持的参数)
         scheduler = DDPMScheduler(
             num_train_timesteps=1000,
             beta_start=0.00085,
             beta_end=0.012,
             beta_schedule="scaled_linear",
             clip_sample=False,
-            set_alpha_to_one=False,
         )
         scheduler.set_timesteps(num_inference_steps)
         
