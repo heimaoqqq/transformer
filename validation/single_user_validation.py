@@ -191,7 +191,8 @@ def single_user_workflow(
                 "--num_images_per_user", str(num_images_to_generate),
                 "--num_inference_steps", "20",  # 减少步数节省时间
                 "--output_dir", str(output_path / "generated_images"),
-                "--device", "auto"
+                "--device", "auto",
+                "--data_dir", real_data_root  # 添加数据目录以获取正确映射
             ]
             
             print(f"  🚀 执行生成命令...")

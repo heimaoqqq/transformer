@@ -33,11 +33,15 @@ def generate_images_training_style(
     num_inference_steps: int = 20,
     output_dir: str = "./generated_images",
     device: str = "auto",
-    seed: int = 42
+    seed: int = 42,
+    data_dir: str = None  # 新增：用于获取正确的用户映射
 ):
     """
     使用训练时的逻辑生成图像
     完全复制train_diffusion.py中的generate_samples函数
+
+    Args:
+        data_dir: 训练数据目录，用于获取正确的用户ID映射
     """
     
     # 设备检测
@@ -49,6 +53,35 @@ def generate_images_training_style(
     if seed is not None:
         torch.manual_seed(seed)
         np.random.seed(seed)
+
+    # 获取正确的用户ID映射 (修复关键问题)
+    user_id_to_idx = {}
+    if data_dir is not None:
+        print("🔍 获取训练时的用户ID映射...")
+        from pathlib import Path
+        data_path = Path(data_dir)
+        all_users = []
+
+        # 扫描数据目录，获取所有用户ID (与训练时逻辑一致)
+        for user_dir in data_path.iterdir():
+            if user_dir.is_dir() and user_dir.name.startswith('ID_'):
+                try:
+                    user_id = int(user_dir.name.split('_')[1])
+                    all_users.append(user_id)
+                except ValueError:
+                    continue
+
+        # 排序并创建映射 (与训练时逻辑一致)
+        all_users = sorted(all_users)
+        user_id_to_idx = {user_id: idx for idx, user_id in enumerate(all_users)}
+
+        print(f"  找到 {len(all_users)} 个用户: {all_users}")
+        print(f"  用户ID映射: {user_id_to_idx}")
+    else:
+        print("⚠️  未提供数据目录，使用简单映射 (可能不正确)")
+        # 回退到简单映射
+        for user_id in user_ids:
+            user_id_to_idx[user_id] = user_id - 1 if user_id > 0 else user_id
     
     # 1. 加载VAE (与训练时相同的方式)
     print("Loading VAE...")
@@ -132,8 +165,14 @@ def generate_images_training_style(
                 # 随机噪声 (与训练时完全相同)
                 latents = torch.randn(1, 4, 32, 32, device=device)
                 
-                # 用户条件编码 (与训练时完全相同)
-                user_idx = user_id - 1 if user_id > 0 else user_id  # 1-based to 0-based
+                # 用户条件编码 (使用正确的映射)
+                if user_id in user_id_to_idx:
+                    user_idx = user_id_to_idx[user_id]
+                    print(f"  用户 {user_id} → 索引 {user_idx}")
+                else:
+                    print(f"  ⚠️  用户 {user_id} 不在映射中，使用默认索引 0")
+                    user_idx = 0
+
                 user_idx_tensor = torch.tensor([user_idx], device=device)
                 encoder_hidden_states = condition_encoder(user_idx_tensor)
                 encoder_hidden_states = encoder_hidden_states.unsqueeze(1)
@@ -182,6 +221,7 @@ def main():
     parser.add_argument("--unet_path", type=str, required=True, help="UNet模型路径")
     parser.add_argument("--condition_encoder_path", type=str, required=True, help="条件编码器路径")
     parser.add_argument("--num_users", type=int, required=True, help="用户总数")
+    parser.add_argument("--data_dir", type=str, help="训练数据目录 (用于获取正确的用户ID映射)")
     
     # 生成参数
     parser.add_argument("--user_ids", type=int, nargs="+", required=True, help="要生成的用户ID列表")
@@ -205,7 +245,8 @@ def main():
         num_inference_steps=args.num_inference_steps,
         output_dir=args.output_dir,
         device=args.device,
-        seed=args.seed
+        seed=args.seed,
+        data_dir=args.data_dir
     )
 
 if __name__ == "__main__":
