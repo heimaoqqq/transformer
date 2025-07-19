@@ -128,20 +128,37 @@ class ConditionalDiffusionValidator:
             return False
     
     def _get_user_id_mapping(self) -> Dict[int, int]:
-        """获取用户ID映射 - 与训练时保持一致"""
+        """获取用户ID映射 - 与训练时保持一致，并进行一致性检查"""
         data_path = Path(self.config.real_data_root)
         all_users = []
-        
+
+        print(f"  🔍 扫描数据目录: {data_path}")
+
         for user_dir in data_path.iterdir():
             if user_dir.is_dir() and user_dir.name.startswith('ID_'):
                 try:
                     user_id = int(user_dir.name.split('_')[1])
                     all_users.append(user_id)
+
+                    # 检查图像数量
+                    image_files = list(user_dir.glob("*.png")) + list(user_dir.glob("*.jpg"))
+                    print(f"    ID_{user_id:2d}: {len(image_files):3d} 张图像")
+
                 except ValueError:
+                    print(f"    ⚠️  无效目录名: {user_dir.name}")
                     continue
-        
+
         all_users = sorted(all_users)
-        return {user_id: idx for idx, user_id in enumerate(all_users)}
+        user_mapping = {user_id: idx for idx, user_id in enumerate(all_users)}
+
+        print(f"  📊 用户映射 (训练时一致): {user_mapping}")
+
+        # 检查目标用户是否存在
+        if self.config.target_user_id not in user_mapping:
+            print(f"  ❌ 目标用户 {self.config.target_user_id} 不在数据中!")
+            print(f"  💡 可用用户: {sorted(user_mapping.keys())}")
+
+        return user_mapping
     
     def train_classifier(self) -> bool:
         """训练用户分类器"""

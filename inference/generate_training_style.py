@@ -31,6 +31,7 @@ def generate_images_training_style(
     num_users: int,
     num_images_per_user: int = 1,
     num_inference_steps: int = 20,
+    guidance_scale: float = 7.5,  # 新增：分类器自由指导强度
     output_dir: str = "./generated_images",
     device: str = "auto",
     seed: int = 42,
@@ -177,18 +178,30 @@ def generate_images_training_style(
                 encoder_hidden_states = condition_encoder(user_idx_tensor)
                 encoder_hidden_states = encoder_hidden_states.unsqueeze(1)
                 
-                # 去噪过程 (与训练时完全相同)
+                # 去噪过程 (添加分类器自由指导)
                 for t in tqdm(ddim_scheduler.timesteps, desc=f"User {user_id}, Image {img_idx+1}"):
                     timestep = t.unsqueeze(0).to(device)
-                    
-                    # 预测噪声
-                    noise_pred = unet(
+
+                    # 有条件预测
+                    noise_pred_cond = unet(
                         latents,
                         timestep,
                         encoder_hidden_states=encoder_hidden_states,
                         return_dict=False
                     )[0]
-                    
+
+                    # 无条件预测 (关键修复)
+                    zero_embedding = torch.zeros_like(encoder_hidden_states)
+                    noise_pred_uncond = unet(
+                        latents,
+                        timestep,
+                        encoder_hidden_states=zero_embedding,
+                        return_dict=False
+                    )[0]
+
+                    # 分类器自由指导 (关键修复)
+                    noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_cond - noise_pred_uncond)
+
                     # 去噪步骤
                     latents = ddim_scheduler.step(noise_pred, t, latents, return_dict=False)[0]
                 
@@ -202,8 +215,19 @@ def generate_images_training_style(
                 image = image.cpu().permute(0, 2, 3, 1).numpy()[0]
                 image = (image * 255).astype(np.uint8)
                 
-                # 保存图像
+                # 保存图像并添加调试标签
                 pil_image = Image.fromarray(image)
+
+                # 添加用户ID标签 (调试信息)
+                try:
+                    from PIL import ImageDraw, ImageFont
+                    draw = ImageDraw.Draw(pil_image)
+                    label_text = f"ID:{user_id} Idx:{user_idx} G:{guidance_scale}"
+                    draw.text((5, 5), label_text, fill=(255, 255, 255))
+                    draw.text((5, 20), f"Steps:{num_inference_steps}", fill=(255, 255, 255))
+                except:
+                    pass  # 如果字体加载失败，跳过标签
+
                 pil_image.save(user_dir / f"generated_{img_idx:03d}.png")
                 
                 # 清理内存
@@ -227,6 +251,7 @@ def main():
     parser.add_argument("--user_ids", type=int, nargs="+", required=True, help="要生成的用户ID列表")
     parser.add_argument("--num_images_per_user", type=int, default=5, help="每个用户生成的图像数量")
     parser.add_argument("--num_inference_steps", type=int, default=20, help="推理步数")
+    parser.add_argument("--guidance_scale", type=float, default=7.5, help="分类器自由指导强度")
     
     # 输出参数
     parser.add_argument("--output_dir", type=str, default="./generated_images", help="输出目录")
@@ -243,6 +268,7 @@ def main():
         num_users=args.num_users,
         num_images_per_user=args.num_images_per_user,
         num_inference_steps=args.num_inference_steps,
+        guidance_scale=args.guidance_scale,
         output_dir=args.output_dir,
         device=args.device,
         seed=args.seed,

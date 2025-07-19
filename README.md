@@ -69,29 +69,52 @@
     --batch_size 8 \
     --learning_rate 1e-4
 
-# 8. 验证生成效果 (微多普勒专用)
-!python validation/improved_single_user_validation.py \
+# 8. 生成图像 (修复后的推理脚本 - 支持分类器自由指导)
+!python inference/generate_training_style.py \
+    --vae_path "/kaggle/input/final-model" \
+    --unet_path "/kaggle/working/diffusion_model" \
+    --condition_encoder_path "/kaggle/working/diffusion_model/condition_encoder.pt" \
+    --num_users 31 \
+    --user_ids 1 5 10 15 \
+    --num_images_per_user 16 \
+    --num_inference_steps 50 \
+    --guidance_scale 15.0 \
+    --data_dir "/kaggle/input/dataset" \
+    --output_dir "/kaggle/working/generated_images"
+
+# 9. 现代化验证系统 (推荐) - 自动检查用户ID映射一致性
+!python validation/validation_pipeline.py \
     --target_user_id 1 \
     --real_data_root "/kaggle/input/dataset" \
     --generate_images \
     --vae_path "/kaggle/input/final-model" \
     --unet_path "/kaggle/working/diffusion_model" \
     --condition_encoder_path "/kaggle/working/diffusion_model/condition_encoder.pt" \
-    --epochs 25 \
-    --batch_size 32 \
+    --model_type microdoppler \
+    --classifier_epochs 30 \
     --max_samples_per_class 1000 \
-    --guidance_scale 15.0
+    --guidance_scale 15.0 \
+    --num_inference_steps 50
 
-# 9. 极端指导强度测试 (如果验证失败)
-!python validation/heatmap_specific_solution.py \
-    --action generate \
-    --user_id 1 \
-    --data_dir "/kaggle/input/dataset" \
+# 9. 极端指导强度测试 (微多普勒数据特化)
+!python validation/validation_pipeline.py \
+    --target_user_id 1 \
+    --real_data_root "/kaggle/input/dataset" \
+    --generate_images \
     --vae_path "/kaggle/input/final-model" \
     --unet_path "/kaggle/working/diffusion_model" \
     --condition_encoder_path "/kaggle/working/diffusion_model/condition_encoder.pt" \
-    --guidance_scale 50.0 \
-    --num_inference_steps 200
+    --model_type microdoppler \
+    --guidance_scale 35.0 \
+    --num_inference_steps 150 \
+    --classifier_epochs 40
+
+# 10. 对比测试 (ResNet vs 微多普勒专用CNN)
+!python validation/validation_pipeline.py \
+    --target_user_id 1 \
+    --real_data_root "/kaggle/input/dataset" \
+    --model_type resnet \
+    --classifier_epochs 30
 
 # 7. 扩散模型训练 (可选)
 !python training/train_diffusion.py \
