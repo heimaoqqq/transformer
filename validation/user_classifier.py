@@ -204,13 +204,16 @@ class UserValidationSystem:
         
         print(f"🚀 使用设备: {self.device}")
         
-        # 改进的图像变换 - 针对微多普勒时频图优化
+        # 现代化的训练时数据增强 - 针对微多普勒时频图优化
         self.transform = transforms.Compose([
             transforms.Resize((128, 128), interpolation=transforms.InterpolationMode.LANCZOS),
+            # 现代化的数据增强技术
+            transforms.RandomHorizontalFlip(p=0.3),  # 轻微的水平翻转
+            transforms.RandomRotation(degrees=5),     # 小角度旋转
+            transforms.ColorJitter(brightness=0.1, contrast=0.1),  # 轻微的亮度对比度调整
             transforms.ToTensor(),
             # 使用ImageNet标准化 - 即使对于微多普勒数据也有助于特征学习
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            # 添加轻微的数据增强以提高泛化能力
         ])
 
         # 验证时的变换 (不包含数据增强)
@@ -337,10 +340,12 @@ class UserValidationSystem:
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"  📊 模型参数: 总计 {total_params:,}, 可训练 {trainable_params:,}")
         
-        # 损失函数和优化器
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        # 现代化的损失函数和优化器
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.1)  # 标签平滑，提高泛化性
+        optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)  # AdamW更现代
+
+        # 使用余弦退火调度器（更现代的调度策略）
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
         
         # 训练历史
         history = {
@@ -352,6 +357,10 @@ class UserValidationSystem:
         
         best_val_acc = 0.0
         best_model_state = None
+
+        # 早停机制
+        patience = 10  # 10个epoch没有改善就停止
+        patience_counter = 0
         
         # 训练循环
         for epoch in range(epochs):
@@ -408,14 +417,23 @@ class UserValidationSystem:
             history['val_acc'].append(val_acc)
             
             # 保存最佳模型
+            # 早停和最佳模型保存
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
                 best_model_state = model.state_dict().copy()
-            
+                patience_counter = 0  # 重置计数器
+            else:
+                patience_counter += 1
+
             # 更新学习率
             scheduler.step()
-            
+
             print(f"  Epoch {epoch+1}: Train Acc: {train_acc:.3f}, Val Acc: {val_acc:.3f}, Val Loss: {val_loss_avg:.4f}")
+
+            # 早停检查
+            if patience_counter >= patience:
+                print(f"  🛑 早停触发：{patience}个epoch无改善，停止训练")
+                break
         
         # 加载最佳模型
         if best_model_state is not None:

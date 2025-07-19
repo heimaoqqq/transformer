@@ -38,7 +38,7 @@ class ValidationConfig:
     model_type: str = "microdoppler"  # resnet 或 microdoppler
     
     # 生成配置
-    num_images_to_generate: int = 16
+    num_images_to_generate: int = 100  # 增加到100张，获得更可靠的统计结果
     num_inference_steps: int = 50  # DDIM推理步数，建议50-200
     
     # 模型路径
@@ -713,8 +713,8 @@ def main():
     # 生成配置
     parser.add_argument("--generate_images", action="store_true",
                        help="是否生成图像")
-    parser.add_argument("--num_images_to_generate", type=int, default=16,
-                       help="生成图像数量")
+    parser.add_argument("--num_images_to_generate", type=int, default=100,
+                       help="生成图像数量 (建议100+张获得可靠统计结果)")
     parser.add_argument("--num_inference_steps", type=int, default=50,
                        help="DDIM推理步数 (建议50-200)")
 
