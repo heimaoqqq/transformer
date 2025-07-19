@@ -28,7 +28,7 @@ def generate_images_training_style(
     unet_path: str,
     condition_encoder_path: str,
     user_ids: List[int],
-    num_users: int,
+    num_users: int = None,  # 保留参数但不使用，从data_dir自动获取
     num_images_per_user: int = 1,
     num_inference_steps: int = 50,  # DDIM推理步数，建议50-200步
     output_dir: str = "./generated_images",
@@ -41,14 +41,16 @@ def generate_images_training_style(
     基于1000步训练的DDPM，使用DDIM加速推理
 
     关键修复：
+    - 自动从data_dir获取训练时的实际用户数量（解决权重加载问题）
     - 基于1000步训练的噪声调度器（与训练时相同）
     - 使用DDIM加速推理，支持可配置步数
     - 移除分类器自由指导（与训练时相同）
     - 纯条件生成（与训练时相同）
 
     Args:
+        num_users: 保留参数但不使用，实际用户数量从data_dir自动获取
         num_inference_steps: DDIM推理步数，建议50-200步
-        data_dir: 训练数据目录，用于获取正确的用户ID映射
+        data_dir: 训练数据目录，用于获取正确的用户ID映射和用户数量
     """
     
     # 设备检测
@@ -107,10 +109,14 @@ def generate_images_training_style(
     print(f"  - in_channels: {unet.config.in_channels}")
     print(f"  - sample_size: {unet.config.sample_size}")
     
-    # 3. 创建条件编码器 (与训练时相同的方式)
+    # 3. 创建条件编码器 (使用训练时的实际用户数量)
     print("Creating Condition Encoder...")
+    # 使用从数据目录获取的实际用户数量，而不是命令行参数
+    actual_num_users = len(user_id_to_idx)  # 训练时的实际用户数量
+    print(f"  训练时用户数量: {actual_num_users}")
+
     condition_encoder = UserConditionEncoder(
-        num_users=num_users,
+        num_users=actual_num_users,  # 使用训练时的实际用户数量
         embed_dim=unet.config.cross_attention_dim  # 使用UNet的cross_attention_dim
     )
     
