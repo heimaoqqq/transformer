@@ -74,16 +74,40 @@ def single_user_workflow(
     data_root = Path(real_data_root)
     target_user_dir = None
     other_user_dirs = []
-    
+
+    # 支持多种目录格式
+    possible_formats = [
+        f"user_{target_user_id:02d}",  # user_01
+        f"user_{target_user_id}",      # user_1
+        f"ID_{target_user_id}",        # ID_1
+        f"{target_user_id}"             # 1
+    ]
+
+    print(f"  🔍 查找用户 {target_user_id} 的目录，支持格式: {possible_formats}")
+
     for user_dir in data_root.iterdir():
-        if user_dir.is_dir() and user_dir.name.startswith('user_'):
+        if user_dir.is_dir():
+            dir_name = user_dir.name
+
+            # 检查是否是目标用户目录
+            if dir_name in possible_formats:
+                target_user_dir = str(user_dir)
+                print(f"  ✅ 找到目标用户目录: {user_dir}")
+                continue
+
+            # 检查是否是其他用户目录
+            user_id = None
             try:
-                user_id = int(user_dir.name.split('_')[1])
-                if user_id == target_user_id:
-                    target_user_dir = str(user_dir)
-                    print(f"  ✅ 找到目标用户目录: {user_dir}")
-                else:
+                if dir_name.startswith('user_'):
+                    user_id = int(dir_name.split('_')[1])
+                elif dir_name.startswith('ID_'):
+                    user_id = int(dir_name.split('_')[1])
+                elif dir_name.isdigit():
+                    user_id = int(dir_name)
+
+                if user_id is not None and user_id != target_user_id:
                     other_user_dirs.append(str(user_dir))
+
             except (IndexError, ValueError):
                 continue
     

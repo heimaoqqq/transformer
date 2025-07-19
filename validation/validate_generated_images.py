@@ -37,9 +37,10 @@ def find_generated_images(generated_root: str, user_ids: List[int]) -> Dict[int,
     for user_id in user_ids:
         # 尝试多种可能的目录格式
         possible_dirs = [
-            generated_root / f"user_{user_id:02d}",
-            generated_root / f"user_{user_id}",
-            generated_root / f"{user_id}",
+            generated_root / f"user_{user_id:02d}",  # user_01
+            generated_root / f"user_{user_id}",      # user_1
+            generated_root / f"ID_{user_id}",        # ID_1
+            generated_root / f"{user_id}",           # 1
         ]
         
         found = False

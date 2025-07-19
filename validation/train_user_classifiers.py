@@ -32,14 +32,27 @@ def find_user_data_directories(data_root: str) -> dict:
     user_dirs = {}
     
     print(f"🔍 在 {data_root} 中查找用户数据...")
-    
-    # 查找用户目录 (假设格式为 user_01, user_02, ...)
+
+    # 查找用户目录 (支持多种格式: user_01, user_1, ID_1, 1)
     for user_dir in data_root.iterdir():
-        if user_dir.is_dir() and user_dir.name.startswith('user_'):
+        if user_dir.is_dir():
+            dir_name = user_dir.name
+            user_id = None
+
             try:
-                user_id = int(user_dir.name.split('_')[1])
-                user_dirs[user_id] = str(user_dir)
-                print(f"  找到用户 {user_id}: {user_dir}")
+                if dir_name.startswith('user_'):
+                    user_id = int(dir_name.split('_')[1])
+                elif dir_name.startswith('ID_'):
+                    user_id = int(dir_name.split('_')[1])
+                elif dir_name.isdigit():
+                    user_id = int(dir_name)
+
+                if user_id is not None:
+                    user_dirs[user_id] = str(user_dir)
+                    print(f"  找到用户 {user_id}: {user_dir}")
+                else:
+                    print(f"  跳过无效目录: {user_dir}")
+
             except (IndexError, ValueError):
                 print(f"  跳过无效目录: {user_dir}")
     
