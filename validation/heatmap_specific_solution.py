@@ -202,15 +202,22 @@ def generate_with_extreme_guidance(
                     # 调度器步骤
                     latents = scheduler.step(noise_pred, t, latents).prev_sample
                 
-                # 解码为图像
-                latents = 1 / 0.18215 * latents
-                images = vae.decode(latents).sample
-                images = (images / 2 + 0.5).clamp(0, 1)
+                # 解码为图像 (与训练时完全相同)
+                vae_model = vae.module if hasattr(vae, 'module') else vae
+                latents = latents / vae_model.config.scaling_factor
+                images = vae_model.decode(latents).sample
+                images = images.clamp(0, 1)  # 正确的反归一化
                 
-                # 保存图像
-                from torchvision.utils import save_image
+                # 保存图像 (与训练时完全相同)
+                import numpy as np
+                from PIL import Image
+
+                image = images.cpu().permute(0, 2, 3, 1).numpy()[0]
+                image = (image * 255).astype(np.uint8)
+                pil_image = Image.fromarray(image)
+
                 save_path = output_path / f"user_{user_id}_extreme_guidance_{i+1}.png"
-                save_image(images, save_path)
+                pil_image.save(save_path)
                 
                 print(f"    保存到: {save_path}")
         
