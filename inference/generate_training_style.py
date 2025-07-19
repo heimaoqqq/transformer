@@ -30,7 +30,7 @@ def generate_images_training_style(
     user_ids: List[int],
     num_users: int,
     num_images_per_user: int = 1,
-    num_inference_steps: int = 20,  # 保留参数但内部强制使用20步
+    num_inference_steps: int = 50,  # DDIM推理步数，建议50-200步
     output_dir: str = "./generated_images",
     device: str = "auto",
     seed: int = 42,
@@ -38,14 +38,16 @@ def generate_images_training_style(
 ):
     """
     使用训练时的逻辑生成图像
-    完全复制train_diffusion.py中的generate_samples函数
+    基于1000步训练的DDPM，使用DDIM加速推理
 
     关键修复：
-    - 强制使用20步推理（与训练时相同）
+    - 基于1000步训练的噪声调度器（与训练时相同）
+    - 使用DDIM加速推理，支持可配置步数
     - 移除分类器自由指导（与训练时相同）
     - 纯条件生成（与训练时相同）
 
     Args:
+        num_inference_steps: DDIM推理步数，建议50-200步
         data_dir: 训练数据目录，用于获取正确的用户ID映射
     """
     
@@ -149,9 +151,9 @@ def generate_images_training_style(
         sample_max_value=1.0,
     )
     
-    # 6. 创建DDIM调度器用于推理 (与训练时完全相同)
+    # 6. 创建DDIM调度器用于推理 (基于1000步训练的调度器)
     ddim_scheduler = DDIMScheduler.from_config(noise_scheduler.config)
-    ddim_scheduler.set_timesteps(20)  # 强制使用训练时的20步，忽略num_inference_steps参数
+    ddim_scheduler.set_timesteps(num_inference_steps)  # 使用用户指定的步数，基于1000步训练
     
     print(f"✅ 所有模型加载完成，开始生成...")
     
@@ -214,9 +216,8 @@ def generate_images_training_style(
                 try:
                     from PIL import ImageDraw, ImageFont
                     draw = ImageDraw.Draw(pil_image)
-                    label_text = f"ID:{user_id} Idx:{user_idx} Steps:20"
+                    label_text = f"ID:{user_id} Idx:{user_idx} Steps:{num_inference_steps}"
                     draw.text((5, 5), label_text, fill=(255, 255, 255))
-                    draw.text((5, 20), f"Steps:{num_inference_steps}", fill=(255, 255, 255))
                 except:
                     pass  # 如果字体加载失败，跳过标签
 
@@ -242,7 +243,7 @@ def main():
     # 生成参数
     parser.add_argument("--user_ids", type=int, nargs="+", required=True, help="要生成的用户ID列表")
     parser.add_argument("--num_images_per_user", type=int, default=5, help="每个用户生成的图像数量")
-    parser.add_argument("--num_inference_steps", type=int, default=20, help="推理步数")
+    parser.add_argument("--num_inference_steps", type=int, default=50, help="DDIM推理步数 (建议50-200)")
 
     
     # 输出参数
