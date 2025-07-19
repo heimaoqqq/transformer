@@ -336,15 +336,26 @@ class ConditionalDiffusionValidator:
             return None
 
     def validate_generated_images(self, generated_images_dir: str) -> Dict:
-        """验证生成图像"""
-        print(f"\n🔍 验证生成图像")
+        """验证生成图像 - 改进版本，包含对比控制实验"""
+        print(f"\n🔍 验证生成图像 (改进版本)")
 
         try:
-            result = self.validation_system.validate_generated_images(
+            # 1. 原有的分类器验证
+            basic_result = self.validation_system.validate_generated_images(
                 user_id=self.config.target_user_id,
                 generated_images_dir=generated_images_dir,
                 confidence_threshold=self.config.confidence_threshold
             )
+
+            # 2. 对比控制实验
+            control_result = self._controlled_validation_experiment(generated_images_dir)
+
+            # 3. 合并结果
+            result = {
+                'basic_validation': basic_result,
+                'control_experiment': control_result,
+                'overall_success': self._evaluate_overall_success(basic_result, control_result)
+            }
 
             # 保存验证结果
             result_path = self.output_path / f"user_{self.config.target_user_id:02d}_validation.json"
@@ -358,6 +369,159 @@ class ConditionalDiffusionValidator:
             import traceback
             traceback.print_exc()
             return {}
+
+    def _controlled_validation_experiment(self, generated_images_dir: str) -> Dict:
+        """对比控制实验 - 验证条件生成的有效性"""
+        print(f"  🧪 执行对比控制实验...")
+
+        try:
+            # 1. 生成错误条件的图像作为对比
+            wrong_user_ids = [uid for uid in self.user_id_mapping.keys()
+                            if uid != self.config.target_user_id][:3]  # 选择3个其他用户
+
+            control_results = {}
+
+            # 2. 为每个错误用户ID生成图像并验证
+            for wrong_id in wrong_user_ids:
+                print(f"    生成错误条件图像 (用户{wrong_id})...")
+
+                # 生成错误条件的图像
+                wrong_images_dir = self._generate_wrong_condition_images(wrong_id)
+
+                if wrong_images_dir:
+                    # 用目标用户的分类器验证错误条件图像
+                    wrong_result = self.validation_system.validate_generated_images(
+                        user_id=self.config.target_user_id,
+                        generated_images_dir=wrong_images_dir,
+                        confidence_threshold=self.config.confidence_threshold
+                    )
+                    control_results[f'wrong_user_{wrong_id}'] = wrong_result
+
+            # 3. 计算对比指标
+            if control_results:
+                # 正确条件的结果
+                correct_result = self.validation_system.validate_generated_images(
+                    user_id=self.config.target_user_id,
+                    generated_images_dir=generated_images_dir,
+                    confidence_threshold=self.config.confidence_threshold
+                )
+
+                correct_success_rate = correct_result.get('success_rate', 0)
+                wrong_success_rates = [r.get('success_rate', 0) for r in control_results.values()]
+                avg_wrong_success_rate = sum(wrong_success_rates) / len(wrong_success_rates)
+
+                # 条件控制效果：正确条件应该明显好于错误条件
+                condition_control_ratio = correct_success_rate / (avg_wrong_success_rate + 1e-6)
+
+                return {
+                    'correct_condition_success_rate': correct_success_rate,
+                    'wrong_conditions_avg_success_rate': avg_wrong_success_rate,
+                    'condition_control_ratio': condition_control_ratio,
+                    'control_effective': condition_control_ratio > 2.0,  # 正确条件应该至少好2倍
+                    'detailed_wrong_results': control_results
+                }
+            else:
+                return {'error': 'Failed to generate control images'}
+
+        except Exception as e:
+            print(f"    ❌ 对比实验失败: {e}")
+            return {'error': str(e)}
+
+    def _generate_wrong_condition_images(self, wrong_user_id: int, num_images: int = 4) -> str:
+        """生成错误条件的图像用于对比"""
+        try:
+            # 创建错误条件图像的输出目录
+            wrong_dir = self.output_path / "control_images" / f"wrong_user_{wrong_user_id}"
+            wrong_dir.mkdir(parents=True, exist_ok=True)
+
+            # 获取错误用户的索引
+            wrong_user_idx = self.user_id_mapping[wrong_user_id]
+
+            # 设置调度器
+            self.scheduler.set_timesteps(self.config.num_inference_steps)
+
+            # 生成图像
+            self.vae.eval()
+            self.unet.eval()
+            self.condition_encoder.eval()
+
+            with torch.no_grad():
+                for i in range(num_images):
+                    # 随机噪声
+                    latents = torch.randn(1, 4, 32, 32, device=self.config.device)
+
+                    # 错误用户条件
+                    user_tensor = torch.tensor([wrong_user_idx], device=self.config.device)
+                    user_embedding = self.condition_encoder(user_tensor)
+
+                    # 确保3D张量格式
+                    if user_embedding.dim() == 2:
+                        user_embedding = user_embedding.unsqueeze(1)
+
+                    # 扩散过程
+                    latents = latents * self.scheduler.init_noise_sigma
+
+                    for t in self.scheduler.timesteps:
+                        # 纯条件预测
+                        noise_pred = self.unet(
+                            latents,
+                            t,
+                            encoder_hidden_states=user_embedding
+                        ).sample
+
+                        # 调度器步骤
+                        latents = self.scheduler.step(noise_pred, t, latents).prev_sample
+
+                    # 解码为图像
+                    vae_model = self.vae.module if hasattr(self.vae, 'module') else self.vae
+                    latents = latents / vae_model.config.scaling_factor
+                    images = vae_model.decode(latents).sample
+                    images = images.clamp(0, 1)
+
+                    # 保存图像
+                    from PIL import Image
+                    image = images.cpu().permute(0, 2, 3, 1).numpy()[0]
+                    image = (image * 255).astype(np.uint8)
+                    pil_image = Image.fromarray(image)
+
+                    save_path = wrong_dir / f"wrong_condition_{i+1:02d}.png"
+                    pil_image.save(save_path)
+
+            return str(wrong_dir)
+
+        except Exception as e:
+            print(f"    ❌ 生成错误条件图像失败: {e}")
+            return None
+
+    def _evaluate_overall_success(self, basic_result: Dict, control_result: Dict) -> Dict:
+        """评估整体验证成功性"""
+        # 基础验证指标
+        basic_success_rate = basic_result.get('success_rate', 0)
+        basic_avg_confidence = basic_result.get('avg_confidence', 0)
+
+        # 对比控制指标
+        control_effective = control_result.get('control_effective', False)
+        condition_ratio = control_result.get('condition_control_ratio', 0)
+
+        # 综合评估
+        overall_success = (
+            basic_success_rate >= 0.6 and
+            basic_avg_confidence >= 0.7 and
+            control_effective
+        )
+
+        return {
+            'overall_success': overall_success,
+            'basic_success_rate': basic_success_rate,
+            'basic_avg_confidence': basic_avg_confidence,
+            'condition_control_effective': control_effective,
+            'condition_control_ratio': condition_ratio,
+            'evaluation_criteria': {
+                'min_success_rate': 0.6,
+                'min_avg_confidence': 0.7,
+                'min_control_ratio': 2.0
+            }
+        }
 
     def run_full_pipeline(self, generate_images: bool = True) -> Dict:
         """运行完整的验证流程"""
