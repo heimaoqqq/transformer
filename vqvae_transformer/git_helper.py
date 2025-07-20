@@ -12,29 +12,32 @@ def run_git_command(cmd, description="", timeout=30):
     """运行Git命令，避免进程冲突"""
     print(f"🔄 {description}")
     print(f"   命令: {cmd}")
-    
+
     try:
         # 使用较短的超时时间，避免长时间阻塞
+        # 设置编码为utf-8避免中文问题
         result = subprocess.run(
-            cmd, 
-            shell=True, 
-            capture_output=True, 
-            text=True, 
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
             timeout=timeout,
-            cwd=os.getcwd()
+            cwd=os.getcwd(),
+            encoding='utf-8',
+            errors='ignore'  # 忽略编码错误
         )
-        
+
         if result.returncode == 0:
             print(f"✅ {description} 成功")
-            if result.stdout.strip():
+            if result.stdout and result.stdout.strip():
                 print(f"   输出: {result.stdout.strip()}")
             return True
         else:
             print(f"❌ {description} 失败")
-            if result.stderr.strip():
+            if result.stderr and result.stderr.strip():
                 print(f"   错误: {result.stderr.strip()}")
             return False
-            
+
     except subprocess.TimeoutExpired:
         print(f"⏰ {description} 超时")
         return False
