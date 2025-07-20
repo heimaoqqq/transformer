@@ -43,8 +43,7 @@ micro-doppler-generation/
 │   ├── train_main.py         # 主训练脚本
 │   ├── generate_main.py      # 主生成脚本
 │   ├── validate_main.py      # 主验证脚本
-│   ├── setup_environment.py # 环境安装器
-│   ├── setup_kaggle.py      # Kaggle专用安装器
+│   ├── setup_environment.py # 统一环境安装器
 │   ├── check_environment.py # 环境检查器
 │   ├── requirements.txt     # 独立依赖管理
 │   └── README.md            # VQ-VAE方案详细说明
@@ -87,10 +86,8 @@ python train_celeba_standard.py \
 # 进入VQ-VAE项目目录
 cd vqvae_transformer
 
-# 安装环境 (重要!)
-python setup_kaggle.py      # Kaggle环境
-# 或
-python setup_environment.py # 本地环境
+# 一键安装环境 (重要!)
+python setup_environment.py
 
 # 验证环境
 python check_environment.py

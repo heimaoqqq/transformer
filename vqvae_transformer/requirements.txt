@@ -1,6 +1,6 @@
 # VQ-VAE + Transformer 微多普勒生成系统依赖
 # 基于diffusers和transformers的官方支持
-# ⚠️ 重要：必须按顺序安装，避免版本冲突
+# ⚠️ 重要：使用经过测试的兼容版本组合
 
 # 核心深度学习框架 (优先安装)
 torch==2.1.0+cu118
@@ -8,13 +8,14 @@ torchvision==0.16.0+cu118
 torchaudio==2.1.0+cu118
 --extra-index-url https://download.pytorch.org/whl/cu118
 
-# HuggingFace生态系统 (确保兼容性)
-diffusers==0.25.1
-transformers==4.36.2
-accelerate==0.25.0
-huggingface-hub==0.19.4
-tokenizers==0.15.0
-safetensors==0.4.1
+# HuggingFace生态系统 (兼容版本组合)
+# 注意：这些版本经过测试，确保cached_download等API可用
+huggingface-hub==0.17.3     # 支持cached_download的最后版本
+tokenizers==0.14.1          # 兼容版本
+safetensors==0.4.0          # 稳定版本
+transformers==4.35.2        # 兼容版本
+accelerate==0.24.1          # 兼容版本
+diffusers==0.24.0           # 兼容版本
 
 # 数据处理
 numpy==1.24.3

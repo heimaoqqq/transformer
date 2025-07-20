@@ -43,27 +43,26 @@ vqvae_transformer/
 
 ### 1. 环境安装 (重要！)
 
-#### 方法1: 自动安装 (推荐)
+#### 一键安装 (推荐)
 ```bash
 cd vqvae_transformer
 
-# 自动安装所有依赖，确保版本兼容
+# 统一环境安装脚本 - 自动检测环境并安装兼容版本
 python setup_environment.py
 
 # 验证环境是否正确
 python check_environment.py
 ```
 
-#### 方法2: 手动安装
+#### 手动安装 (如果自动安装失败)
 ```bash
 cd vqvae_transformer
 
 # ⚠️ 先卸载可能冲突的包
-pip uninstall torch torchvision torchaudio diffusers transformers accelerate -y
+pip uninstall diffusers transformers huggingface-hub accelerate -y
 
-# 按顺序安装，避免版本冲突
-pip install torch==2.1.0+cu118 torchvision==0.16.0+cu118 torchaudio==2.1.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
-pip install diffusers==0.25.1 transformers==4.36.2 accelerate==0.25.0
+# 安装兼容版本组合
+pip install huggingface-hub==0.17.3 transformers==4.35.2 diffusers==0.24.0 accelerate==0.24.1
 pip install -r requirements.txt
 
 # 验证安装
@@ -166,20 +165,26 @@ python training/train_transformer.py \
 ## 🔍 故障排除
 
 ### 环境问题
-1. **API不兼容**:
+1. **diffusers兼容性问题** (常见):
    ```bash
-   # 完全重装环境
+   # 如果遇到 "cannot import name 'cached_download'" 错误
    python setup_environment.py
    ```
 
-2. **版本冲突**:
+2. **API不兼容**:
+   ```bash
+   # 重新安装兼容版本
+   python setup_environment.py
+   ```
+
+3. **版本冲突**:
    ```bash
    # 检查版本
    python check_environment.py
 
-   # 手动卸载冲突包
-   pip uninstall torch diffusers transformers -y
-   pip install torch==2.1.0+cu118 diffusers==0.25.1 transformers==4.36.2 --extra-index-url https://download.pytorch.org/whl/cu118
+   # 手动安装兼容版本
+   pip uninstall diffusers transformers huggingface-hub -y
+   pip install huggingface-hub==0.17.3 transformers==4.35.2 diffusers==0.24.0
    ```
 
 3. **CUDA问题**:
