@@ -19,7 +19,7 @@ current_dir = Path(__file__).parent
 project_root = current_dir.parent
 sys.path.insert(0, str(project_root))
 
-from validation.user_classifier import UserValidationSystem
+from ..validation.user_classifier import UserValidationSystem
 
 @dataclass
 class ValidationConfig:
@@ -97,7 +97,7 @@ class ConditionalDiffusionValidator:
             print(f"  📊 用户映射: {self.user_id_mapping}")
             
             # 加载条件编码器
-            from training.train_diffusion import UserConditionEncoder
+            from ..training.train_diffusion import UserConditionEncoder
             self.condition_encoder = UserConditionEncoder(
                 num_users=num_users,
                 embed_dim=self.unet.config.cross_attention_dim

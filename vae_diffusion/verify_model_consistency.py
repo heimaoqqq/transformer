@@ -76,7 +76,7 @@ def simulate_training_scenario():
     print("\n🎯 模拟训练时的场景:")
     
     try:
-        from training.train_diffusion import UserConditionEncoder
+        from ..training.train_diffusion import UserConditionEncoder
         from diffusers import UNet2DConditionModel
         
         # 模拟训练时的配置

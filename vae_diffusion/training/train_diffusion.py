@@ -34,7 +34,7 @@ current_dir = Path(__file__).parent
 project_root = current_dir.parent
 sys.path.insert(0, str(project_root))
 
-from utils.data_loader import MicroDopplerDataset, MicroDopplerDataModule
+from ..utils.data_loader import MicroDopplerDataset, MicroDopplerDataModule
 
 class UserConditionEncoder(nn.Module):
     """用户ID条件编码器"""

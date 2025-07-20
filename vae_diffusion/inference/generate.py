@@ -21,7 +21,7 @@ current_dir = Path(__file__).parent
 project_root = current_dir.parent
 sys.path.insert(0, str(project_root))
 
-from training.train_diffusion import UserConditionEncoder
+from ..training.train_diffusion import UserConditionEncoder
 
 def generate_images_training_style(
     vae_path: str,

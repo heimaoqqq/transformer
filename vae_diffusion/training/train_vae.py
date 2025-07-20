@@ -29,8 +29,8 @@ current_dir = Path(__file__).parent
 project_root = current_dir.parent
 sys.path.insert(0, str(project_root))
 
-from utils.data_loader import MicroDopplerDataset
-from utils.metrics import calculate_psnr, calculate_ssim
+from ..utils.data_loader import MicroDopplerDataset
+from ..utils.metrics import calculate_psnr, calculate_ssim
 
 class MicroDopplerVAELoss(nn.Module):
     """微多普勒VAE损失函数"""

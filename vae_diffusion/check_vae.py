@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from diffusers import AutoencoderKL
-from utils.data_loader import MicroDopplerDataset
+from ..utils.data_loader import MicroDopplerDataset
 import argparse
 
 class VAEChecker:

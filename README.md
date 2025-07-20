@@ -1,269 +1,188 @@
-# 微多普勒时频图数据增广项目
+# 🎨 微多普勒时频图生成系统
 
-基于 Diffusers 的两阶段扩散模型，用于微多普勒时频图的数据增广。
-
-## 🎯 项目概述
-
-- **数据集**: 256×256 彩色微多普勒时频图像
-- **用户数**: 31位用户的步态数据
-- **目标**: 通过条件扩散生成指定用户的步态微多普勒时频图像
-- **技术栈**: PyTorch + Diffusers + VAE + UNet
-
-## 🏗️ 技术方案
-
-### 第一阶段: VAE (变分自编码器)
-- 将 256×256 图像编码到潜在空间 (32×32×4)
-- 学习连续的视觉表示
-- 压缩数据维度，提高训练效率
-- 使用 AutoencoderKL (Stable Diffusion 同款)
-
-### 第二阶段: 条件扩散
-- 在潜在空间中进行扩散训练
-- 以用户ID作为条件信息 (交叉注意力)
-- 生成指定用户的微多普勒图像
-- 使用 UNet2DConditionModel
-
-## 🔍 验证系统
-
-### 核心验证工具
-- **用户分类器**: 基于ResNet-18的二分类器，验证生成图像是否包含用户特征
-- **极端指导强度**: 针对微多普勒数据的特殊生成策略
-- **成功标准**: 置信度>0.8算成功，成功率≥60%为良好
-
-### 微多普勒数据特点
-- **用户间差异小**: 步态特征的微小差异需要精细学习
-- **需要极端参数**: 指导强度30-50，推理步数150-200
-- **频域特征**: 重点关注频率重心、扩散、峰值位置差异
-
-## 🚀 快速开始
-
-### Kaggle环境 (推荐)
-
-```bash
-# 1. 克隆项目
-!git clone https://github.com/heimaoqqq/VAE.git
-%cd VAE
-
-# 2. 修复依赖 (如果需要)
-!python ultimate_fix_kaggle.py
-
-# 3. 设置感知损失 (自动安装LPIPS并启用感知损失)
-!python install_lpips.py
-
-# 4. VAE训练 (64×64分辨率，高质量配置)
-!python train_celeba_standard.py
-
-# 5. 检查训练质量
-!python check_vae.py
-
-# 6. 如果质量不佳，使用诊断工具
-!python diagnose_vae.py     # 分析问题原因
-!python quick_test_vae.py   # 测试新配置
-
-# 7. 条件扩散训练
-!python training/train_diffusion.py \
-    --data_dir "/kaggle/input/dataset" \
-    --vae_path "/kaggle/input/final-model" \
-    --output_dir "/kaggle/working/diffusion_model" \
-    --epochs 100 \
-    --batch_size 8 \
-    --learning_rate 1e-4
-
-# 8. 生成图像 (修复后的推理脚本 - 支持分类器自由指导)
-!python inference/generate_training_style.py \
-    --vae_path "/kaggle/input/final-model" \
-    --unet_path "/kaggle/working/diffusion_model" \
-    --condition_encoder_path "/kaggle/working/diffusion_model/condition_encoder.pt" \
-    --num_users 31 \
-    --user_ids 1 5 10 15 \
-    --num_images_per_user 16 \
-    --num_inference_steps 50 \
-    --guidance_scale 15.0 \
-    --data_dir "/kaggle/input/dataset" \
-    --output_dir "/kaggle/working/generated_images"
-
-# 9. 现代化验证系统 (推荐) - 自动检查用户ID映射一致性
-!python validation/validation_pipeline.py \
-    --target_user_id 1 \
-    --real_data_root "/kaggle/input/dataset" \
-    --generate_images \
-    --vae_path "/kaggle/input/final-model" \
-    --unet_path "/kaggle/working/diffusion_model" \
-    --condition_encoder_path "/kaggle/working/diffusion_model/condition_encoder.pt" \
-    --model_type microdoppler \
-    --classifier_epochs 30 \
-    --max_samples_per_class 1000 \
-    --guidance_scale 15.0 \
-    --num_inference_steps 50
-
-# 9. 极端指导强度测试 (微多普勒数据特化)
-!python validation/validation_pipeline.py \
-    --target_user_id 1 \
-    --real_data_root "/kaggle/input/dataset" \
-    --generate_images \
-    --vae_path "/kaggle/input/final-model" \
-    --unet_path "/kaggle/working/diffusion_model" \
-    --condition_encoder_path "/kaggle/working/diffusion_model/condition_encoder.pt" \
-    --model_type microdoppler \
-    --guidance_scale 35.0 \
-    --num_inference_steps 150 \
-    --classifier_epochs 40
-
-# 10. 对比测试 (ResNet vs 微多普勒专用CNN)
-!python validation/validation_pipeline.py \
-    --target_user_id 1 \
-    --real_data_root "/kaggle/input/dataset" \
-    --model_type resnet \
-    --classifier_epochs 30
-
-# 7. 扩散模型训练 (可选)
-!python training/train_diffusion.py \
-    --data_dir /kaggle/input/dataset \
-    --vae_path /kaggle/working/outputs/vae_celeba_standard/final_model \
-    --output_dir /kaggle/working/outputs/diffusion
-```
-
-### 本地环境
-
-#### 1. 环境设置
-```bash
-pip install -r requirements.txt
-```
-
-#### 2. 准备数据
-支持两种数据结构：
-
-**Kaggle格式**:
-```
-/kaggle/input/dataset/
-├── ID_1/
-├── ID_2/
-└── ID_31/
-```
-
-**标准格式**:
-```
-data/
-├── user_01/
-├── user_02/
-└── user_31/
-```
-
-#### 3. 训练模型
-
-```bash
-# 第一阶段: VAE训练
-python training/train_vae.py --data_dir ./data --output_dir ./outputs/vae
-
-# 第二阶段: 条件扩散训练
-python training/train_diffusion.py \
-    --data_dir ./data \
-    --vae_path ./outputs/vae/final_model \
-    --output_dir ./outputs/diffusion
-```
-
-#### 4. 生成图像
-```bash
-# 生成指定用户的图像
-python inference/generate.py \
-    --vae_path ./outputs/vae/final_model \
-    --unet_path ./outputs/diffusion/final_model/unet \
-    --condition_encoder_path ./outputs/diffusion/final_model/condition_encoder.pt \
-    --num_users 31 \
-    --user_ids 1 5 10 \
-    --num_images_per_user 5
-```
+基于深度学习的微多普勒时频图生成系统，提供两种不同的技术方案。
 
 ## 📁 项目结构
 
 ```
-├── training/              # 训练脚本
-│   ├── train_vae.py      # VAE训练核心
-│   └── train_diffusion.py # 条件扩散训练
-├── inference/             # 推理脚本
-│   └── generate.py       # 条件生成
-├── utils/                 # 工具函数
-│   ├── data_loader.py    # 数据加载器
-│   └── metrics.py        # 评估指标
-├── train_celeba_standard.py # 主训练脚本 (推荐)
-├── check_vae.py          # VAE质量检查
-├── diagnose_vae.py       # VAE问题诊断工具
-├── quick_test_vae.py     # 快速配置测试
-├── install_lpips.py      # 感知损失管理
-├── ultimate_fix_kaggle.py # 依赖修复工具
-└── requirements.txt      # 依赖管理
+micro-doppler-generation/
+├── vae_diffusion/             # VAE + 扩散模型方案
+│   ├── training/             # 训练脚本
+│   │   ├── train_vae.py     # VAE训练
+│   │   └── train_diffusion.py # 扩散模型训练
+│   ├── inference/            # 推理脚本
+│   │   └── generate.py      # 条件生成
+│   ├── validation/           # 验证框架
+│   │   ├── metric_learning_validator.py # 度量学习验证
+│   │   ├── statistical_validator.py     # 统计验证
+│   │   ├── user_classifier.py           # 用户分类器
+│   │   └── validation_pipeline.py       # 验证流水线
+│   ├── utils/                # 工具函数
+│   │   ├── data_loader.py   # 数据加载器
+│   │   └── metrics.py       # 评估指标
+│   ├── train_celeba_standard.py # 标准训练脚本
+│   ├── train_diffusion_memory_optimized.py # 内存优化训练
+│   ├── train_improved_quality.py # 高质量训练
+│   ├── check_vae.py         # VAE质量检查
+│   ├── requirements.txt     # 依赖管理
+│   └── README.md            # VAE方案详细说明
+├── vqvae_transformer/         # VQ-VAE + Transformer方案
+│   ├── models/               # 模型定义
+│   │   ├── vqvae_model.py   # 防坍缩VQ-VAE
+│   │   └── transformer_model.py # 条件Transformer
+│   ├── training/             # 训练脚本
+│   │   ├── train_vqvae.py   # VQ-VAE训练
+│   │   └── train_transformer.py # Transformer训练
+│   ├── inference/            # 推理脚本
+│   │   └── generate.py      # 图像生成
+│   ├── validation/           # 验证框架
+│   │   └── validator.py     # 专用验证器
+│   ├── utils/                # 工具函数
+│   │   ├── data_loader.py   # 数据加载器
+│   │   └── metrics.py       # 评估指标
+│   ├── train_main.py         # 主训练脚本
+│   ├── generate_main.py      # 主生成脚本
+│   ├── validate_main.py      # 主验证脚本
+│   ├── setup_environment.py # 环境安装器
+│   ├── setup_kaggle.py      # Kaggle专用安装器
+│   ├── check_environment.py # 环境检查器
+│   ├── requirements.txt     # 独立依赖管理
+│   └── README.md            # VQ-VAE方案详细说明
+└── README.md                 # 本文件
 ```
 
-## 📋 环境要求
+## 🎯 两种方案对比
 
-- **Python**: 3.8+
-- **PyTorch**: 2.1.0
-- **GPU**: 8GB+ VRAM (Kaggle T4)
-- **依赖**: 见 requirements.txt
+| 特性 | VAE + 扩散模型 | VQ-VAE + Transformer |
+|------|---------------|---------------------|
+| **生成质量** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **用户特征保持** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **训练速度** | ⭐⭐ | ⭐⭐⭐⭐ |
+| **GPU内存需求** | 15GB+ | 8GB+ |
+| **小数据适应性** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| **生成速度** | ⭐⭐ (多步去噪) | ⭐⭐⭐⭐⭐ (一次前向) |
+| **技术成熟度** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **环境兼容性** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
 
-## 📊 性能基准 (Kaggle环境)
+## 🚀 快速开始
 
-| 阶段 | 时间 | GPU内存 | 输出质量 |
-|------|------|---------|----------|
-| VAE训练 (改进版) | 2-3小时 | ~6GB | PSNR > 25dB |
-| 扩散训练 | 4-6小时 | ~8GB | 条件生成 |
-| 图像生成 | 5-10分钟 | ~4GB | 用户特征 |
-
-### 🔧 改进内容
-- **KL权重**: 1e-6 → 1e-4 (Stable Diffusion标准)
-- **感知损失**: 禁用 → 启用 (权重1.0)
-- **频域损失**: 0.05 → 0.1 (增强时频特征保持)
-- **训练轮数**: 30 → 50 (提升收敛质量)
-- **学习率调度**: 添加warmup策略
-
-## 🔧 故障排除
-
-### 基础问题
-1. **依赖冲突**: 运行 `python ultimate_fix_kaggle.py`
-2. **感知损失问题**: 运行 `python install_lpips.py` (自动处理)
-3. **CUDA内存不足**: 减小batch_size
-4. **训练中断**: 检查数据路径和格式
-
-### VAE重建质量差 (PSNR < 20dB)
+### 方案1: VAE + 扩散模型 (高质量)
 ```bash
-# 1. 诊断问题
-python diagnose_vae.py      # 分析损失组成和模型行为
+# 进入VAE项目目录
+cd vae_diffusion
 
-# 2. 测试新配置
-python quick_test_vae.py    # 验证参数设置
+# 安装依赖
+pip install -r requirements.txt
 
-# 3. 常见修复
-# - KL权重过高: 1e-4 → 1e-6
-# - 学习率过高: 2e-4 → 1e-4
-# - 感知损失设备问题: 权重1.0 → 0.1
-# - 训练不足: 增加轮数到80+
+# 开始训练
+python train_celeba_standard.py \
+    --data_dir "/kaggle/input/dataset" \
+    --output_dir "/kaggle/working/outputs/vae_diffusion" \
+    --resolution 128 \
+    --num_users 31
 ```
 
-## 📊 验证系统
+### 方案2: VQ-VAE + Transformer (高效率)
+```bash
+# 进入VQ-VAE项目目录
+cd vqvae_transformer
 
-### 验证流程
-1. **统计验证**: 检查生成图像的基本统计特性
-2. **度量学习验证**: 使用Siamese网络学习用户相似性
-3. **分类器验证**: 训练专用分类器判断生成质量
-4. **对比控制实验**: 验证条件生成的有效性
+# 安装环境 (重要!)
+python setup_kaggle.py      # Kaggle环境
+# 或
+python setup_environment.py # 本地环境
 
-### 关键改进
-- **分层负样本采样**: 确保每个其他用户都有代表性样本
-- **负样本比例优化**: 从3:1提升到8:1，充分覆盖用户多样性
-- **对比控制实验**: 生成错误条件图像进行对比验证
+# 验证环境
+python check_environment.py
 
-### 验证指标
-- **成功率**: 生成图像被正确识别的比例 (目标 > 60%)
-- **置信度**: 分类器的平均置信度 (目标 > 0.8)
-- **条件控制比**: 正确条件 vs 错误条件的成功率比值 (目标 > 2.0)
+# 开始训练
+python train_main.py \
+    --data_dir "/kaggle/input/dataset" \
+    --output_dir "/kaggle/working/outputs/vqvae_transformer" \
+    --resolution 128 \
+    --codebook_size 1024 \
+    --num_users 31
+```
 
-## 🎯 使用建议
+## 📊 方案选择建议
 
-- **新手**: 直接使用 `train_celeba_standard.py`
-- **进阶**: 使用 `training/` 目录下的专业脚本
-- **质量检查**: 训练后运行 `check_vae.py`
-- **验证生成**: 使用 `validation/validation_pipeline.py` 全面验证
+### 🎯 选择VAE + 扩散模型，如果你：
+- ✅ **追求最高质量**: 需要最佳的生成质量
+- ✅ **GPU内存充足**: 有15GB+的GPU内存
+- ✅ **数据量较大**: 每用户有1000+样本
+- ✅ **时间充裕**: 可以接受较长的训练时间
+- ✅ **技术成熟**: 希望使用成熟稳定的技术
+
+### 🚀 选择VQ-VAE + Transformer，如果你：
+- ✅ **GPU内存有限**: 只有8-16GB GPU内存
+- ✅ **数据量较小**: 每用户少于500样本
+- ✅ **快速迭代**: 需要快速训练和生成
+- ✅ **精确控制**: 希望更好的用户特征控制
+- ✅ **环境友好**: 需要更好的环境兼容性
+
+## 🔧 环境要求
+
+### 通用要求
+- **Python**: 3.8+
+- **PyTorch**: 2.1.0+
+- **CUDA**: 11.8+ (推荐)
+
+### VAE + 扩散模型
+- **GPU内存**: 15GB+ (推荐P100/V100/A100)
+- **训练时间**: 长 (数小时到数天)
+- **依赖**: diffusers, transformers, accelerate
+
+### VQ-VAE + Transformer  
+- **GPU内存**: 8GB+ (T4即可)
+- **训练时间**: 中等 (1-3小时)
+- **依赖**: 自动环境管理，确保兼容性
+
+## 🎨 生成效果预期
+
+### VAE + 扩散模型
+- **FID分数**: < 50
+- **IS分数**: > 2.0
+- **用户分类准确率**: > 85%
+- **生成多样性**: 高
+
+### VQ-VAE + Transformer
+- **码本利用率**: > 80%
+- **用户区分度**: 每用户20+独特向量
+- **生成速度**: 比扩散模型快5-10倍
+- **用户特征保持**: 优秀
+
+## 🔍 故障排除
+
+### 环境问题
+```bash
+# VQ-VAE项目环境问题
+cd vqvae_transformer
+python check_environment.py  # 检查环境
+python setup_environment.py  # 重装环境
+
+# VAE项目环境问题
+cd vae_diffusion
+python check_vae.py         # 检查VAE
+python ultimate_fix_kaggle.py # 修复Kaggle环境
+```
+
+### 训练问题
+- **内存不足**: 降低batch_size或使用梯度累积
+- **生成质量差**: 调整学习率和训练轮数
+- **用户特征不明显**: 增加条件权重或用户嵌入维度
+
+## 📚 详细文档
+
+- [VAE + 扩散模型详细说明](vae_diffusion/README.md)
+- [VQ-VAE + Transformer详细说明](vqvae_transformer/README.md)
 
 ## 📄 许可证
 
-MIT License
+本项目基于开源深度学习框架，遵循相应的许可证。
+
+---
+
+**🎯 推荐使用流程**:
+1. 如果是新手或GPU内存有限，先尝试 **VQ-VAE + Transformer**
+2. 如果追求最高质量且资源充足，使用 **VAE + 扩散模型**
+3. 两种方案都可以并行开发和比较效果

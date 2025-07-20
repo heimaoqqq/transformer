@@ -69,7 +69,7 @@ def main():
         sys.path.insert(0, str(project_root))
         
         # 导入训练脚本
-        from training.train_diffusion import main as train_main
+        from ..training.train_diffusion import main as train_main
         
         print("✅ 训练模块导入成功")
         

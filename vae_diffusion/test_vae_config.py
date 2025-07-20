@@ -23,7 +23,7 @@ def test_vae_config():
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent))
         
-        from utils.data_loader import MicroDopplerDataset
+        from ..utils.data_loader import MicroDopplerDataset
         
         # 创建测试数据集 (使用128×128分辨率)
         dataset = MicroDopplerDataset(
