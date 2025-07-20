@@ -418,13 +418,37 @@ if __name__ == "__main__":
 
     # 验证生成图像（如果存在）
     from pathlib import Path
+    print(f"\n🔍 检查生成图像目录: {args.generated_images_dir}")
+
     if Path(args.generated_images_dir).exists():
-        result = validator.validate_generated_images(
-            target_user_id=args.target_user_id,
-            generated_images_dir=args.generated_images_dir,
-            threshold=args.threshold
-        )
-        print(f"\n✅ 度量学习验证完成")
+        # 检查目录中的图像文件
+        image_files = list(Path(args.generated_images_dir).glob("*.png")) + \
+                     list(Path(args.generated_images_dir).glob("*.jpg")) + \
+                     list(Path(args.generated_images_dir).glob("*.jpeg"))
+
+        print(f"📊 找到 {len(image_files)} 张生成图像")
+
+        if len(image_files) > 0:
+            print(f"🔍 开始验证生成图像...")
+            result = validator.validate_generated_images(
+                target_user_id=args.target_user_id,
+                generated_images_dir=args.generated_images_dir,
+                threshold=args.threshold
+            )
+
+            # 显示详细结果
+            if result:
+                print(f"\n📊 度量学习验证结果:")
+                print(f"  🎯 目标用户: {args.target_user_id}")
+                print(f"  📈 成功率: {result.get('success_rate', 'N/A'):.3f}")
+                print(f"  � 平均相似性: {result.get('avg_similarity', 'N/A'):.3f}")
+                print(f"  🎚️ 阈值: {args.threshold}")
+                print(f"  ✅ 成功图像: {result.get('successful_images', 'N/A')} / {result.get('total_images', 'N/A')}")
+
+            print(f"\n✅ 度量学习验证完成")
+        else:
+            print(f"⚠️ 生成图像目录存在但为空")
+            print(f"💡 提示: 先运行传统验证器生成图像")
     else:
-        print(f"\n📋 Siamese网络训练完成，生成图像目录不存在，跳过验证步骤")
+        print(f"📋 生成图像目录不存在，跳过验证步骤")
         print(f"💡 提示: 先运行传统验证器生成图像，再运行度量学习验证")
