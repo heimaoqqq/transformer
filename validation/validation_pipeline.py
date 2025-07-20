@@ -40,6 +40,7 @@ class ValidationConfig:
     num_images_to_generate: int = 100  # 增加到100张，获得更可靠的统计结果
     num_inference_steps: int = 50  # DDIM推理步数，建议50-200
     batch_size: int = 10  # 批量生成大小，充分利用显存
+    guidance_scale: float = 7.5  # Classifier-Free Guidance强度
     
     # 模型路径
     vae_path: Optional[str] = None
@@ -291,12 +292,32 @@ class ConditionalDiffusionValidator:
                     latents = latents * self.scheduler.init_noise_sigma
 
                     for t in self.scheduler.timesteps:
-                        # 批量纯条件预测 (与训练时相同)
-                        noise_pred = self.unet(
-                            latents,
-                            t,
-                            encoder_hidden_states=user_embedding
-                        ).sample
+                        # Classifier-Free Guidance实现
+                        if self.config.guidance_scale > 1.0:
+                            # 条件预测
+                            noise_pred_cond = self.unet(
+                                latents,
+                                t,
+                                encoder_hidden_states=user_embedding
+                            ).sample
+
+                            # 无条件预测（使用零向量作为无条件token）
+                            uncond_embedding = torch.zeros_like(user_embedding)
+                            noise_pred_uncond = self.unet(
+                                latents,
+                                t,
+                                encoder_hidden_states=uncond_embedding
+                            ).sample
+
+                            # CFG组合
+                            noise_pred = noise_pred_uncond + self.config.guidance_scale * (noise_pred_cond - noise_pred_uncond)
+                        else:
+                            # 纯条件预测（原始方式）
+                            noise_pred = self.unet(
+                                latents,
+                                t,
+                                encoder_hidden_states=user_embedding
+                            ).sample
 
                         # 调度器步骤
                         latents = self.scheduler.step(noise_pred, t, latents).prev_sample
@@ -470,12 +491,32 @@ class ConditionalDiffusionValidator:
                 latents = latents * self.scheduler.init_noise_sigma
 
                 for t in self.scheduler.timesteps:
-                    # 批量纯条件预测
-                    noise_pred = self.unet(
-                        latents,
-                        t,
-                        encoder_hidden_states=user_embedding
-                    ).sample
+                    # Classifier-Free Guidance实现（对比实验也使用CFG）
+                    if self.config.guidance_scale > 1.0:
+                        # 条件预测
+                        noise_pred_cond = self.unet(
+                            latents,
+                            t,
+                            encoder_hidden_states=user_embedding
+                        ).sample
+
+                        # 无条件预测
+                        uncond_embedding = torch.zeros_like(user_embedding)
+                        noise_pred_uncond = self.unet(
+                            latents,
+                            t,
+                            encoder_hidden_states=uncond_embedding
+                        ).sample
+
+                        # CFG组合
+                        noise_pred = noise_pred_uncond + self.config.guidance_scale * (noise_pred_cond - noise_pred_uncond)
+                    else:
+                        # 纯条件预测
+                        noise_pred = self.unet(
+                            latents,
+                            t,
+                            encoder_hidden_states=user_embedding
+                        ).sample
 
                     # 调度器步骤
                     latents = self.scheduler.step(noise_pred, t, latents).prev_sample
@@ -735,6 +776,8 @@ def main():
                        help="DDIM推理步数 (建议50-200)")
     parser.add_argument("--batch_size", type=int, default=10,
                        help="批量生成大小 (根据显存调整，建议8-16)")
+    parser.add_argument("--guidance_scale", type=float, default=7.5,
+                       help="Classifier-Free Guidance强度 (1.0=纯条件, >1.0=CFG)")
 
     # 模型路径
     parser.add_argument("--vae_path", type=str,
@@ -759,6 +802,7 @@ def main():
         num_images_to_generate=args.num_images_to_generate,
         num_inference_steps=args.num_inference_steps,
         batch_size=args.batch_size,
+        guidance_scale=args.guidance_scale,
         vae_path=args.vae_path,
         unet_path=args.unet_path,
         condition_encoder_path=args.condition_encoder_path,
@@ -772,7 +816,8 @@ def main():
     print(f"  输出目录: {config.output_dir}")
     print(f"  分类器: 标准ResNet-18, epochs={config.classifier_epochs}, batch_size={config.classifier_batch_size}")
     if args.generate_images:
-        print(f"  生成: 纯条件生成, steps={config.num_inference_steps}, batch_size={config.batch_size}")
+        cfg_type = "CFG" if config.guidance_scale > 1.0 else "纯条件"
+        print(f"  生成: {cfg_type}, guidance_scale={config.guidance_scale}, steps={config.num_inference_steps}, batch_size={config.batch_size}")
         print(f"  模型: VAE={config.vae_path is not None}, UNet={config.unet_path is not None}")
     print("=" * 60)
 
