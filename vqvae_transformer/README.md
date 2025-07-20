@@ -65,6 +65,17 @@ python quick_fix_environment.py
 python check_environment.py
 ```
 
+#### API兼容性测试 (详细诊断)
+```bash
+cd vqvae_transformer
+
+# 详细的API兼容性测试和诊断
+python test_api_compatibility.py
+
+# 查看详细报告
+cat api_compatibility_report.md
+```
+
 #### 手动安装 (如果自动安装失败)
 ```bash
 cd vqvae_transformer
@@ -182,13 +193,20 @@ python training/train_transformer.py \
    python quick_fix_environment.py
    ```
 
-2. **diffusers兼容性问题**:
+2. **VQModel导入失败** (新问题):
+   ```bash
+   # 如果遇到 "No module named 'diffusers.models.autoencoders'" 错误
+   python test_api_compatibility.py  # 详细诊断
+   python quick_fix_environment.py   # 快速修复
+   ```
+
+3. **diffusers兼容性问题**:
    ```bash
    # 如果遇到 "cannot import name 'cached_download'" 错误
    python quick_fix_environment.py
    ```
 
-3. **API不兼容**:
+4. **API不兼容**:
    ```bash
    # 重新安装兼容版本
    python setup_environment.py
@@ -197,10 +215,13 @@ python training/train_transformer.py \
    python quick_fix_environment.py
    ```
 
-4. **版本冲突**:
+5. **版本冲突**:
    ```bash
    # 检查版本
    python check_environment.py
+
+   # 详细诊断
+   python test_api_compatibility.py
 
    # 手动安装兼容版本
    pip install huggingface-hub==0.17.3 transformers==4.35.2 diffusers==0.24.0 --force-reinstall
