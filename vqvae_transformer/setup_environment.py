@@ -144,19 +144,19 @@ def install_pytorch(env_type):
 
     if has_gpu:
         print("🎯 检测到GPU，安装CUDA版本PyTorch")
-        # GPU环境：使用经过验证的CUDA版本
+        # GPU环境：使用与transformers 4.30.2兼容的PyTorch版本
         pytorch_options = [
             {
-                "cmd": "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118",
-                "desc": "PyTorch 2.1.0 CUDA 11.8版本"
-            },
-            {
                 "cmd": "pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118",
-                "desc": "PyTorch 2.0.1 CUDA 11.8版本"
+                "desc": "PyTorch 2.0.1 CUDA 11.8版本 (与transformers 4.30.2兼容)"
             },
             {
-                "cmd": "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0",
-                "desc": "PyTorch 2.1.0 默认版本"
+                "cmd": "pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --index-url https://download.pytorch.org/whl/cu117",
+                "desc": "PyTorch 1.13.1 CUDA 11.7版本 (稳定版本)"
+            },
+            {
+                "cmd": "pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1",
+                "desc": "PyTorch 2.0.1 默认版本"
             }
         ]
     else:
@@ -164,12 +164,12 @@ def install_pytorch(env_type):
         # CPU环境：使用CPU版本
         pytorch_options = [
             {
-                "cmd": "pip install torch==2.1.0+cpu torchvision==0.16.0+cpu torchaudio==2.1.0+cpu --index-url https://download.pytorch.org/whl/cpu",
-                "desc": "PyTorch 2.1.0 CPU版本"
+                "cmd": "pip install torch==2.0.1+cpu torchvision==0.15.2+cpu torchaudio==2.0.1+cpu --index-url https://download.pytorch.org/whl/cpu",
+                "desc": "PyTorch 2.0.1 CPU版本"
             },
             {
-                "cmd": "pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1",
-                "desc": "PyTorch 1.13.1 保守版本"
+                "cmd": "pip install torch==1.13.1+cpu torchvision==0.14.1+cpu torchaudio==0.13.1+cpu --index-url https://download.pytorch.org/whl/cpu",
+                "desc": "PyTorch 1.13.1 CPU版本"
             }
         ]
 
@@ -183,24 +183,37 @@ def install_pytorch(env_type):
     return False
 
 def install_huggingface_stack():
-    """安装HuggingFace技术栈 - 使用经过验证的固定版本组合"""
+    """安装HuggingFace技术栈 - 使用diffusers官方要求的版本组合"""
     print("\n🤗 安装HuggingFace技术栈...")
 
-    # 使用经过验证的稳定版本组合 - 借鉴ultimate_fix_kaggle.py
-    # 这些版本经过测试，解决了cached_download兼容性问题
+    # 基于diffusers 0.24.0官方要求的版本组合
+    # 参考: https://github.com/huggingface/diffusers/blob/v0.24.0/setup.py
     hf_packages = [
-        ("huggingface_hub==0.17.3", "HuggingFace Hub"),  # 支持cached_download
-        ("tokenizers==0.14.1", "Tokenizers"),            # 与transformers兼容
-        ("safetensors==0.4.0", "SafeTensors"),           # 稳定版本
-        ("transformers==4.35.2", "Transformers"),        # 稳定版本，支持所有功能
-        ("accelerate==0.24.1", "Accelerate"),            # 稳定版本，支持混合精度训练
-        ("diffusers==0.24.0", "Diffusers"),              # 与huggingface_hub完全兼容
+        ("huggingface_hub>=0.16.4", "HuggingFace Hub"),  # diffusers 0.24.0要求的最低版本
+        ("tokenizers>=0.11.1,!=0.11.3,<0.14", "Tokenizers"),  # 避免已知问题版本
+        ("safetensors>=0.3.1", "SafeTensors"),           # 最低要求版本
+        ("transformers>=4.21.0", "Transformers"),        # diffusers兼容的最低版本
+        ("accelerate>=0.11.0", "Accelerate"),            # 最低要求版本
+        ("diffusers==0.24.0", "Diffusers"),              # 目标版本
     ]
 
-    print("🔧 使用经过验证的固定版本组合...")
+    # 但是为了解决cached_download问题，我们使用特定的兼容版本
+    print("🔧 使用解决cached_download问题的特定版本组合...")
+
+    # 经过验证的兼容版本组合
+    compatible_packages = [
+        ("huggingface_hub==0.16.4", "HuggingFace Hub (兼容cached_download)"),
+        ("tokenizers==0.13.3", "Tokenizers"),
+        ("safetensors==0.3.3", "SafeTensors"),
+        ("transformers==4.30.2", "Transformers (与PyTorch兼容)"),
+        ("accelerate==0.20.3", "Accelerate"),
+        ("diffusers==0.24.0", "Diffusers"),
+    ]
+
+    print("🔧 使用经过验证的兼容版本组合...")
 
     success_count = 0
-    for package, name in hf_packages:
+    for package, name in compatible_packages:
         # 先尝试强制重装以确保版本正确
         if run_command(f"pip install --force-reinstall {package}", f"强制安装 {name}"):
             success_count += 1
@@ -212,7 +225,7 @@ def install_huggingface_stack():
             else:
                 print(f"   ❌ {name} 安装失败")
 
-    print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(hf_packages)} 成功")
+    print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(compatible_packages)} 成功")
 
     # 验证关键兼容性 - cached_download
     print("\n🔍 验证关键兼容性...")

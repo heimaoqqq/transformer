@@ -58,12 +58,13 @@ python check_environment.py
 ```bash
 cd vqvae_transformer
 
-# 安装经过验证的固定版本组合 (确保API兼容性)
+# 安装与diffusers 0.24.0兼容的版本组合
 pip install numpy==1.26.4
-pip install huggingface_hub==0.17.3
-pip install transformers==4.35.2
+pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
+pip install huggingface_hub==0.16.4
+pip install transformers==4.30.2
 pip install diffusers==0.24.0
-pip install accelerate==0.24.1
+pip install accelerate==0.20.3
 
 # 安装其他依赖
 pip install -r requirements.txt
@@ -212,12 +213,13 @@ python diagnose_api.py --fix     # 自动修复API问题
 
 ### 经过验证的版本组合
 ```bash
-# 核心版本组合 (经过测试，确保API兼容性)
+# 与diffusers 0.24.0兼容的版本组合 (解决PyTorch和API兼容性问题)
 numpy==1.26.4
-huggingface_hub==0.17.3    # 支持cached_download
-transformers==4.35.2       # 稳定版本
-diffusers==0.24.0          # 兼容VQModel API
-accelerate==0.24.1         # 支持混合精度训练
+torch==2.0.1               # 与transformers 4.30.2兼容
+huggingface_hub==0.16.4    # 支持cached_download，与diffusers兼容
+transformers==4.30.2       # 稳定版本，避免PyTorch _C错误
+diffusers==0.24.0          # 目标版本
+accelerate==0.20.3         # 兼容版本
 ```
 
 3. **CUDA问题**:
