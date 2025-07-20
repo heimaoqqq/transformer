@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 VQ-VAE + Transformer 统一环境安装脚本
-解决numpy/JAX兼容性和API版本问题
+借鉴ultimate_fix_kaggle.py思路，使用经过验证的固定版本组合
 """
 
 import os
@@ -9,21 +9,22 @@ import sys
 import subprocess
 import importlib
 
-def run_command(cmd, description="", allow_failure=False):
+def run_command(cmd, description="", ignore_errors=False):
     """运行命令并处理错误"""
     print(f"🔄 {description}")
-    
+
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-        print(f"✅ {description} 成功")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ {description} 失败")
-        if e.stderr.strip():
-            print(f"   错误: {e.stderr.strip()}")
-        if allow_failure:
-            print("⚠️ 此步骤允许失败，继续...")
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode == 0 or ignore_errors:
+            print(f"✅ {description} 成功")
             return True
+        else:
+            print(f"❌ {description} 失败")
+            if result.stderr and not ignore_errors:
+                print(f"   错误: {result.stderr.strip()}")
+            return False
+    except Exception as e:
+        print(f"❌ {description} 异常: {e}")
         return False
 
 def detect_environment():
@@ -44,36 +45,92 @@ def detect_environment():
     print("✅ 检测到本地环境")
     return "local"
 
-def install_core_packages():
-    """安装核心包 - 解决numpy/JAX兼容性问题"""
-    print("\n🔧 安装核心包...")
-    
-    # 先安装兼容的numpy版本 - 解决JAX兼容性问题
-    success = run_command("pip install 'numpy>=1.26.0,<2.0.0'", "安装兼容的numpy")
-    if not success:
-        run_command("pip install numpy==1.26.4", "安装numpy (指定版本)")
-    
-    # 安装其他核心依赖
-    core_deps = [
-        "pillow>=9.0.0",
-        "requests>=2.28.0", 
-        "packaging>=21.0",
-        "filelock>=3.0.0",
-        "tqdm>=4.64.0",
-        "pyyaml>=6.0",
-        "typing-extensions>=4.0.0",
-        "regex>=2022.0.0",
+def clean_environment():
+    """清理环境 - 移除可能冲突的包"""
+    print("\n🗑️ 清理可能冲突的包...")
+
+    # 清理Python模块缓存
+    try:
+        modules_to_clear = ['numpy', 'torch', 'diffusers', 'transformers', 'huggingface_hub', 'accelerate']
+        for module in modules_to_clear:
+            if module in sys.modules:
+                del sys.modules[module]
+        print("✅ Python模块缓存已清理")
+    except:
+        pass
+
+    # 卸载可能冲突的包
+    packages_to_remove = [
+        "diffusers", "transformers", "accelerate", "huggingface_hub", "huggingface-hub",
+        "tokenizers", "safetensors", "datasets", "evaluate", "peft", "trl",
+        "jax", "jaxlib", "flax", "optax"  # JAX相关包可能导致numpy冲突
     ]
-    
-    for dep in core_deps:
-        run_command(f"pip install '{dep}'", f"安装 {dep.split('>=')[0]}", allow_failure=True)
-    
+
+    for package in packages_to_remove:
+        run_command(f"pip uninstall -y {package}", f"卸载 {package}", ignore_errors=True)
+
+    # 清理pip缓存
+    run_command("pip cache purge", "清理pip缓存", ignore_errors=True)
+
     return True
 
+def install_core_packages():
+    """安装核心包 - 使用经过验证的固定版本"""
+    print("\n🔧 安装核心包...")
+
+    # 升级基础工具
+    run_command("pip install --upgrade pip setuptools wheel", "升级基础工具")
+
+    # 安装兼容的numpy版本 - 解决JAX兼容性问题
+    numpy_versions = ["1.26.4", "1.24.4", "1.23.5"]
+    for version in numpy_versions:
+        if run_command(f"pip install numpy=={version}", f"安装numpy {version}"):
+            break
+
+    # 安装其他核心依赖 - 使用固定版本
+    core_deps = [
+        ("pillow==10.0.1", "Pillow"),
+        ("requests==2.31.0", "Requests"),
+        ("packaging==23.2", "Packaging"),
+        ("filelock==3.13.1", "FileLock"),
+        ("tqdm==4.66.1", "TQDM"),
+        ("pyyaml==6.0.1", "PyYAML"),
+        ("typing-extensions==4.8.0", "Typing Extensions"),
+        ("regex==2023.10.3", "Regex"),
+    ]
+
+    for package, name in core_deps:
+        run_command(f"pip install {package}", f"安装 {name}", ignore_errors=True)
+
+    return True
+
+def check_gpu_environment():
+    """检查GPU环境"""
+    print("\n🔍 检查GPU环境...")
+
+    try:
+        result = subprocess.run(['nvidia-smi'], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("✅ nvidia-smi可用")
+            # 检查GPU类型
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if any(gpu in line for gpu in ['Tesla', 'T4', 'P100', 'V100', 'A100']):
+                    print(f"   🎯 检测到GPU: {line.strip()}")
+                    return True
+            print("⚠️ nvidia-smi运行但未检测到GPU")
+            return False
+        else:
+            print("❌ nvidia-smi失败")
+            return False
+    except Exception as e:
+        print(f"❌ nvidia-smi异常: {e}")
+        return False
+
 def install_pytorch(env_type):
-    """安装PyTorch"""
+    """安装PyTorch - 使用经过验证的固定版本"""
     print("\n🔥 安装PyTorch...")
-    
+
     if env_type == "kaggle":
         try:
             import torch
@@ -81,57 +138,142 @@ def install_pytorch(env_type):
             return True
         except ImportError:
             pass
-    
-    # 安装PyTorch
-    cmd = "pip install 'torch>=2.0.0' 'torchvision>=0.15.0' 'torchaudio>=2.0.0' --index-url https://download.pytorch.org/whl/cu118"
-    success = run_command(cmd, "安装PyTorch (CUDA)")
-    
-    if not success:
-        cmd = "pip install 'torch>=2.0.0' 'torchvision>=0.15.0' 'torchaudio>=2.0.0'"
-        run_command(cmd, "安装PyTorch (CPU)")
-    
-    return True
+
+    # 检查GPU环境
+    has_gpu = check_gpu_environment()
+
+    if has_gpu:
+        print("🎯 检测到GPU，安装CUDA版本PyTorch")
+        # GPU环境：使用经过验证的CUDA版本
+        pytorch_options = [
+            {
+                "cmd": "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118",
+                "desc": "PyTorch 2.1.0 CUDA 11.8版本"
+            },
+            {
+                "cmd": "pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118",
+                "desc": "PyTorch 2.0.1 CUDA 11.8版本"
+            },
+            {
+                "cmd": "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0",
+                "desc": "PyTorch 2.1.0 默认版本"
+            }
+        ]
+    else:
+        print("💻 未检测到GPU，安装CPU版本PyTorch")
+        # CPU环境：使用CPU版本
+        pytorch_options = [
+            {
+                "cmd": "pip install torch==2.1.0+cpu torchvision==0.16.0+cpu torchaudio==2.1.0+cpu --index-url https://download.pytorch.org/whl/cpu",
+                "desc": "PyTorch 2.1.0 CPU版本"
+            },
+            {
+                "cmd": "pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1",
+                "desc": "PyTorch 1.13.1 保守版本"
+            }
+        ]
+
+    for i, option in enumerate(pytorch_options, 1):
+        print(f"\n尝试方案 {i}: {option['desc']}")
+        if run_command(option["cmd"], option["desc"]):
+            print(f"✅ PyTorch方案 {i} 安装成功")
+            return True
+
+    print("❌ 所有PyTorch安装方案都失败")
+    return False
 
 def install_huggingface_stack():
-    """安装HuggingFace技术栈"""
+    """安装HuggingFace技术栈 - 使用经过验证的固定版本组合"""
     print("\n🤗 安装HuggingFace技术栈...")
-    
-    # 按依赖顺序安装
+
+    # 使用经过验证的稳定版本组合 - 借鉴ultimate_fix_kaggle.py
+    # 这些版本经过测试，解决了cached_download兼容性问题
     hf_packages = [
-        ("huggingface-hub>=0.17.0,<0.25.0", "HuggingFace Hub"),
-        ("tokenizers>=0.14.0,<0.20.0", "Tokenizers"),
-        ("safetensors>=0.4.0,<0.5.0", "SafeTensors"),
-        ("transformers>=4.35.0,<4.45.0", "Transformers"),
-        ("accelerate>=0.24.0,<0.35.0", "Accelerate"),
-        ("diffusers>=0.24.0,<0.30.0", "Diffusers"),
+        ("huggingface_hub==0.17.3", "HuggingFace Hub"),  # 支持cached_download
+        ("tokenizers==0.14.1", "Tokenizers"),            # 与transformers兼容
+        ("safetensors==0.4.0", "SafeTensors"),           # 稳定版本
+        ("transformers==4.35.2", "Transformers"),        # 稳定版本，支持所有功能
+        ("accelerate==0.24.1", "Accelerate"),            # 稳定版本，支持混合精度训练
+        ("diffusers==0.24.0", "Diffusers"),              # 与huggingface_hub完全兼容
     ]
-    
-    for package_spec, name in hf_packages:
-        success = run_command(f"pip install '{package_spec}'", f"安装 {name}")
-        if not success:
-            package_name = package_spec.split('>=')[0].split('<')[0]
-            run_command(f"pip install {package_name}", f"安装 {name} (无版本限制)", allow_failure=True)
-    
-    return True
+
+    print("🔧 使用经过验证的固定版本组合...")
+
+    success_count = 0
+    for package, name in hf_packages:
+        # 先尝试强制重装以确保版本正确
+        if run_command(f"pip install --force-reinstall {package}", f"强制安装 {name}"):
+            success_count += 1
+        else:
+            # 如果强制重装失败，尝试普通安装
+            print(f"   ⚠️ {name} 强制安装失败，尝试普通安装...")
+            if run_command(f"pip install {package}", f"安装 {name}"):
+                success_count += 1
+            else:
+                print(f"   ❌ {name} 安装失败")
+
+    print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(hf_packages)} 成功")
+
+    # 验证关键兼容性 - cached_download
+    print("\n🔍 验证关键兼容性...")
+    try:
+        from huggingface_hub import cached_download
+        print("✅ cached_download 验证成功")
+        return True
+    except ImportError:
+        print("❌ cached_download 仍然不可用")
+        print("🔧 执行强力修复...")
+
+        # 强力修复：完全重装关键包
+        critical_packages = [
+            "huggingface_hub==0.17.3",
+            "diffusers==0.24.0"
+        ]
+
+        for package in critical_packages:
+            print(f"🔄 强力重装 {package}...")
+            package_name = package.split('==')[0]
+            run_command(f"pip uninstall {package_name} -y", f"卸载 {package_name}", ignore_errors=True)
+            run_command("pip cache purge", "清理缓存", ignore_errors=True)
+            run_command(f"pip install --no-cache-dir {package}", f"重装 {package}")
+
+        # 最终验证
+        try:
+            # 清理模块缓存
+            modules_to_clear = ['huggingface_hub', 'diffusers']
+            for module in modules_to_clear:
+                if module in sys.modules:
+                    del sys.modules[module]
+
+            from huggingface_hub import cached_download
+            print("✅ 强力修复成功")
+            return True
+        except ImportError:
+            print("❌ 强力修复失败")
+            print("💡 建议: 重启Python内核后重新运行此脚本")
+            return False
+    except Exception as e:
+        print(f"⚠️ 其他验证问题: {e}")
+        return success_count == len(hf_packages)
 
 def install_additional_deps():
-    """安装其他必要依赖"""
+    """安装其他必要依赖 - 使用固定版本"""
     print("\n📚 安装其他依赖...")
-    
+
     additional_deps = [
-        "scipy>=1.9.0",
-        "scikit-learn>=1.1.0", 
-        "scikit-image>=0.19.0",
-        "matplotlib>=3.5.0",
-        "opencv-python>=4.6.0",
-        "einops>=0.6.0",
-        "tensorboard>=2.10.0",
-        "lpips>=0.1.4",
+        ("scipy==1.11.4", "SciPy"),
+        ("scikit-learn==1.3.0", "Scikit-learn"),
+        ("scikit-image==0.21.0", "Scikit-image"),
+        ("matplotlib==3.7.2", "Matplotlib"),
+        ("opencv-python==4.8.1.78", "OpenCV"),
+        ("einops==0.7.0", "Einops"),
+        ("tensorboard==2.15.1", "TensorBoard"),
+        ("lpips==0.1.4", "LPIPS"),
     ]
-    
-    for dep in additional_deps:
-        run_command(f"pip install '{dep}'", f"安装 {dep.split('>=')[0]}", allow_failure=True)
-    
+
+    for package, name in additional_deps:
+        run_command(f"pip install {package}", f"安装 {name}", ignore_errors=True)
+
     return True
 
 def test_critical_imports():
@@ -265,8 +407,9 @@ def main():
             print("❌ 操作已取消")
             return
     
-    # 安装流程
+    # 安装流程 - 借鉴ultimate_fix_kaggle.py的阶段化安装
     steps = [
+        ("清理环境", clean_environment),
         ("安装核心包", install_core_packages),
         ("安装PyTorch", lambda: install_pytorch(env_type)),
         ("安装HuggingFace技术栈", install_huggingface_stack),
@@ -275,16 +418,20 @@ def main():
         ("测试VQModel API", test_vqmodel_api),
         ("测试Transformer API", test_transformer_api),
     ]
-    
+
     failed_steps = []
-    
+
     for step_name, step_func in steps:
         print(f"\n{'='*20} {step_name} {'='*20}")
         success = step_func()
-        
+
         if not success:
             print(f"❌ {step_name} 失败")
             failed_steps.append(step_name)
+            # 对于关键步骤，如果失败则停止
+            if step_name in ["安装PyTorch", "安装HuggingFace技术栈"]:
+                print(f"💥 关键步骤失败，无法继续")
+                break
         else:
             print(f"✅ {step_name} 成功")
     

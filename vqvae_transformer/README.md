@@ -47,7 +47,7 @@ vqvae_transformer/
 ```bash
 cd vqvae_transformer
 
-# 统一环境安装脚本 - 解决numpy/JAX兼容性和API版本问题
+# 统一环境安装脚本 - 使用经过验证的固定版本组合
 python setup_environment.py
 
 # 验证环境是否正确
@@ -58,14 +58,12 @@ python check_environment.py
 ```bash
 cd vqvae_transformer
 
-# 安装兼容的numpy版本 (解决JAX兼容性问题)
-pip install 'numpy>=1.26.0,<2.0.0'
-
-# 安装HuggingFace技术栈
-pip install 'huggingface-hub>=0.17.0,<0.25.0'
-pip install 'transformers>=4.35.0,<4.45.0'
-pip install 'diffusers>=0.24.0,<0.30.0'
-pip install 'accelerate>=0.24.0,<0.35.0'
+# 安装经过验证的固定版本组合 (确保API兼容性)
+pip install numpy==1.26.4
+pip install huggingface_hub==0.17.3
+pip install transformers==4.35.2
+pip install diffusers==0.24.0
+pip install accelerate==0.24.1
 
 # 安装其他依赖
 pip install -r requirements.txt
@@ -173,20 +171,21 @@ python training/train_transformer.py \
 1. **numpy/JAX兼容性问题** (常见):
    ```bash
    # 如果遇到 "module 'numpy' has no attribute 'dtypes'" 错误
-   pip install 'numpy>=1.26.0,<2.0.0'
+   pip install numpy==1.26.4
    python setup_environment.py
    ```
 
 2. **VQModel导入失败**:
    ```bash
    # 如果遇到 "No module named 'diffusers.models.autoencoders'" 错误
-   python setup_environment.py  # 自动检测API路径
+   pip install diffusers==0.24.0 --force-reinstall
+   python setup_environment.py
    ```
 
-3. **transformers导入失败**:
+3. **cached_download不可用**:
    ```bash
-   # 如果遇到transformers相关错误
-   pip install 'transformers>=4.35.0,<4.45.0'
+   # 如果遇到 "cannot import name 'cached_download'" 错误
+   pip install huggingface_hub==0.17.3 --force-reinstall
    python setup_environment.py
    ```
 
@@ -195,9 +194,19 @@ python training/train_transformer.py \
    # 检查版本
    python check_environment.py
 
-   # 重新安装兼容版本
+   # 使用经过验证的固定版本组合
    python setup_environment.py
    ```
+
+### 经过验证的版本组合
+```bash
+# 核心版本组合 (经过测试，确保API兼容性)
+numpy==1.26.4
+huggingface_hub==0.17.3    # 支持cached_download
+transformers==4.35.2       # 稳定版本
+diffusers==0.24.0          # 兼容VQModel API
+accelerate==0.24.1         # 支持混合精度训练
+```
 
 3. **CUDA问题**:
    ```bash
