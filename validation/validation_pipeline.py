@@ -660,15 +660,36 @@ class ConditionalDiffusionValidator:
                 results["validation_completed"] = True
                 results["validation_result"] = validation_result
 
-                # 判断整体成功
-                success_rate = validation_result.get('success_rate', 0)
-                avg_confidence = validation_result.get('avg_confidence', 0)
+                # 判断整体成功 - 修复：从正确的位置获取指标
+                basic_result = validation_result.get('basic_validation', {})
+                overall_result = validation_result.get('overall_success', {})
 
-                if success_rate >= 0.6 and avg_confidence >= 0.8:
+                success_rate = basic_result.get('success_rate', 0)
+                avg_confidence = basic_result.get('avg_confidence', 0)
+                overall_success = overall_result.get('overall_success', False)
+
+                # 使用综合评估结果
+                if overall_success:
                     results["success"] = True
                     print(f"🎉 验证成功! 成功率: {success_rate:.2f}, 平均置信度: {avg_confidence:.3f}")
+
+                    # 显示对比控制实验结果
+                    control_result = validation_result.get('control_experiment', {})
+                    if 'condition_control_ratio' in control_result:
+                        ratio = control_result['condition_control_ratio']
+                        print(f"  🎯 条件控制比: {ratio:.1f}x (正确条件 vs 错误条件)")
                 else:
                     print(f"⚠️  验证结果不理想. 成功率: {success_rate:.2f}, 平均置信度: {avg_confidence:.3f}")
+
+                    # 详细诊断信息
+                    control_result = validation_result.get('control_experiment', {})
+                    if 'control_effective' in control_result:
+                        control_effective = control_result['control_effective']
+                        if not control_effective:
+                            print(f"  ❌ 条件控制效果不佳")
+                        else:
+                            print(f"  ✅ 条件控制效果良好")
+
                     print(f"💡 建议: 尝试更多推理步数 (num_inference_steps > {self.config.num_inference_steps})")
 
         return results
