@@ -136,12 +136,13 @@ def install_compatible_versions():
     # 第二步：安装HuggingFace生态系统 (按依赖顺序)
     print("\n🤗 安装HuggingFace生态系统...")
     
+    # 使用diffusers 0.24.0官方要求的版本
     hf_packages = [
-        ("huggingface_hub==0.16.4", "HuggingFace Hub (支持cached_download)"),
-        ("tokenizers==0.13.3", "Tokenizers"),
-        ("safetensors==0.3.3", "SafeTensors"),
-        ("transformers==4.30.2", "Transformers (与PyTorch 2.0.1兼容)"),
-        ("accelerate==0.20.3", "Accelerate"),
+        ("huggingface_hub>=0.19.4", "HuggingFace Hub (diffusers官方要求)"),
+        ("tokenizers>=0.11.1,!=0.11.3", "Tokenizers"),
+        ("safetensors>=0.3.1", "SafeTensors (diffusers官方要求)"),
+        ("transformers>=4.25.1", "Transformers (diffusers官方要求)"),
+        ("accelerate>=0.11.0", "Accelerate (diffusers官方要求)"),
         ("diffusers==0.24.0", "Diffusers (目标版本)"),
     ]
     

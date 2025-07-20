@@ -204,20 +204,33 @@ def install_huggingface_stack():
     # 但是为了解决cached_download问题，我们使用特定的兼容版本
     print("🔧 使用解决cached_download问题的特定版本组合...")
 
-    # 经过验证的兼容版本组合
+    # 基于diffusers 0.24.0官方要求的版本组合
     compatible_packages = [
-        ("huggingface_hub==0.16.4", "HuggingFace Hub (兼容cached_download)"),
-        ("tokenizers==0.13.3", "Tokenizers"),
-        ("safetensors==0.3.3", "SafeTensors"),
-        ("transformers==4.30.2", "Transformers (与PyTorch兼容)"),
-        ("accelerate==0.20.3", "Accelerate"),
+        ("huggingface_hub>=0.19.4", "HuggingFace Hub (diffusers官方要求)"),
+        ("tokenizers>=0.11.1,!=0.11.3", "Tokenizers"),
+        ("safetensors>=0.3.1", "SafeTensors (diffusers官方要求)"),
+        ("transformers>=4.25.1", "Transformers (diffusers官方要求)"),
+        ("accelerate>=0.11.0", "Accelerate (diffusers官方要求)"),
         ("diffusers==0.24.0", "Diffusers"),
     ]
 
-    print("🔧 使用经过验证的兼容版本组合...")
+    # 但是为了解决cached_download问题，我们需要特定版本
+    print("⚠️ 注意：diffusers要求huggingface_hub>=0.19.4，但可能没有cached_download")
+    print("🔧 尝试使用diffusers官方要求的版本...")
+
+    # 先尝试官方要求的版本
+    official_packages = [
+        ("huggingface_hub>=0.19.4", "HuggingFace Hub (官方要求)"),
+        ("transformers>=4.25.1", "Transformers (官方要求)"),
+        ("accelerate>=0.11.0", "Accelerate (官方要求)"),
+        ("safetensors>=0.3.1", "SafeTensors (官方要求)"),
+        ("diffusers==0.24.0", "Diffusers"),
+    ]
+
+    print("🔧 使用diffusers官方要求的版本组合...")
 
     success_count = 0
-    for package, name in compatible_packages:
+    for package, name in official_packages:
         # 先尝试强制重装以确保版本正确
         if run_command(f"pip install --force-reinstall {package}", f"强制安装 {name}"):
             success_count += 1
@@ -229,16 +242,43 @@ def install_huggingface_stack():
             else:
                 print(f"   ❌ {name} 安装失败")
 
-    print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(compatible_packages)} 成功")
+    print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(official_packages)} 成功")
 
-    # 验证关键兼容性 - cached_download
-    print("\n🔍 验证关键兼容性...")
+    # 验证关键兼容性 - 检查下载API
+    print("\n🔍 验证HuggingFace下载API...")
+
+    # 检查可用的下载API
+    available_apis = []
+
     try:
         from huggingface_hub import cached_download
-        print("✅ cached_download 验证成功")
-        return True
+        available_apis.append("cached_download")
+        print("✅ cached_download: 可用")
     except ImportError:
-        print("❌ cached_download 仍然不可用")
+        print("⚠️ cached_download: 不可用 (新版本已移除)")
+
+    try:
+        from huggingface_hub import hf_hub_download
+        available_apis.append("hf_hub_download")
+        print("✅ hf_hub_download: 可用")
+    except ImportError:
+        print("❌ hf_hub_download: 不可用")
+
+    try:
+        from huggingface_hub import snapshot_download
+        available_apis.append("snapshot_download")
+        print("✅ snapshot_download: 可用")
+    except ImportError:
+        print("❌ snapshot_download: 不可用")
+
+    if available_apis:
+        print(f"✅ 找到可用的下载API: {', '.join(available_apis)}")
+        if "cached_download" not in available_apis:
+            print("💡 注意: cached_download不可用，但有其他API可用")
+            print("   代码中需要使用 hf_hub_download 替代 cached_download")
+        return True
+    else:
+        print("❌ 没有找到可用的下载API")
         print("🔧 执行强力修复...")
 
         # 强力修复：完全重装关键包

@@ -58,13 +58,14 @@ python check_environment.py
 ```bash
 cd vqvae_transformer
 
-# 安装与diffusers 0.24.0兼容的版本组合 (正确的版本对应关系)
+# 安装diffusers 0.24.0官方要求的版本组合
 pip install numpy==1.26.4
-pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
-pip install huggingface_hub==0.16.4
-pip install transformers==4.30.2
-pip install diffusers==0.24.0
-pip install accelerate==0.20.3
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install "huggingface_hub>=0.19.4"
+pip install "transformers>=4.25.1"
+pip install "diffusers==0.24.0"
+pip install "accelerate>=0.11.0"
+pip install "safetensors>=0.3.1"
 
 # 安装其他依赖
 pip install -r requirements.txt
@@ -228,17 +229,19 @@ python check_pytorch_compatibility.py           # 检查当前PyTorch状态
 python check_pytorch_compatibility.py --fix     # 自动修复PyTorch问题
 ```
 
-### 经过验证的版本组合
+### diffusers 0.24.0官方要求的版本
 ```bash
-# 与diffusers 0.24.0兼容的版本组合 (正确的版本对应关系)
-numpy==1.26.4
-torch==2.0.1               # 与transformers 4.30.2兼容
-torchvision==0.15.1        # 与torch 2.0.1对应 (重要!)
-torchaudio==2.0.1          # 与torch 2.0.1对应
-huggingface_hub==0.16.4    # 支持cached_download，与diffusers兼容
-transformers==4.30.2       # 稳定版本，避免PyTorch _C错误
+# 基于diffusers官方setup.py的要求
+numpy>=1.24.0              # 基础数值计算
+torch>=1.4                 # PyTorch (diffusers要求>=1.4，推荐最新稳定版)
+huggingface_hub>=0.19.4    # diffusers官方要求 (注意：可能没有cached_download)
+transformers>=4.25.1       # diffusers官方要求
+accelerate>=0.11.0         # diffusers官方要求
+safetensors>=0.3.1         # diffusers官方要求
 diffusers==0.24.0          # 目标版本
-accelerate==0.20.3         # 兼容版本
+
+# 注意：新版本huggingface_hub可能没有cached_download API
+# 需要使用 hf_hub_download 替代 cached_download
 ```
 
 3. **CUDA问题**:
