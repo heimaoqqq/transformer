@@ -54,6 +54,17 @@ python setup_environment.py
 python check_environment.py
 ```
 
+#### 快速修复 (如果安装失败)
+```bash
+cd vqvae_transformer
+
+# 快速修复脚本 - 跳过卸载，直接覆盖安装
+python quick_fix_environment.py
+
+# 验证修复结果
+python check_environment.py
+```
+
 #### 手动安装 (如果自动安装失败)
 ```bash
 cd vqvae_transformer
@@ -165,26 +176,34 @@ python training/train_transformer.py \
 ## 🔍 故障排除
 
 ### 环境问题
-1. **diffusers兼容性问题** (常见):
+1. **安装过程中断** (常见):
    ```bash
-   # 如果遇到 "cannot import name 'cached_download'" 错误
-   python setup_environment.py
+   # 如果setup_environment.py失败，使用快速修复
+   python quick_fix_environment.py
    ```
 
-2. **API不兼容**:
+2. **diffusers兼容性问题**:
+   ```bash
+   # 如果遇到 "cannot import name 'cached_download'" 错误
+   python quick_fix_environment.py
+   ```
+
+3. **API不兼容**:
    ```bash
    # 重新安装兼容版本
    python setup_environment.py
+
+   # 如果仍然失败
+   python quick_fix_environment.py
    ```
 
-3. **版本冲突**:
+4. **版本冲突**:
    ```bash
    # 检查版本
    python check_environment.py
 
    # 手动安装兼容版本
-   pip uninstall diffusers transformers huggingface-hub -y
-   pip install huggingface-hub==0.17.3 transformers==4.35.2 diffusers==0.24.0
+   pip install huggingface-hub==0.17.3 transformers==4.35.2 diffusers==0.24.0 --force-reinstall
    ```
 
 3. **CUDA问题**:

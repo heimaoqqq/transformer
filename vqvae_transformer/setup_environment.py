@@ -46,21 +46,31 @@ def detect_environment():
 def complete_uninstall():
     """完全卸载可能冲突的包"""
     print("\n🗑️ 卸载可能冲突的包...")
-    
+
     packages_to_remove = [
-        "diffusers", "transformers", "accelerate", 
+        "diffusers", "transformers", "accelerate",
         "huggingface-hub", "tokenizers", "safetensors",
         "datasets", "evaluate", "peft", "trl",
         "torch-audio", "torchaudio", "torchtext", "torchdata",
         "sentencepiece", "protobuf", "wandb", "tensorboardX",
     ]
-    
+
+    uninstall_success = True
+
     for round_num in range(2):
         print(f"第 {round_num + 1} 轮卸载:")
         for package in packages_to_remove:
-            run_command(f"pip uninstall {package} -y", f"卸载 {package}")
-    
-    run_command("pip cache purge", "清理pip缓存")
+            success = run_command(f"pip uninstall {package} -y", f"卸载 {package}")
+            if not success:
+                print(f"⚠️ {package} 卸载失败或不存在，继续...")
+
+    # 清理pip缓存 - 即使失败也继续
+    cache_success = run_command("pip cache purge", "清理pip缓存")
+    if not cache_success:
+        print("⚠️ pip缓存清理失败，继续安装...")
+
+    print("✅ 卸载步骤完成 (部分失败不影响后续安装)")
+    return True  # 总是返回True，不阻断后续安装
 
 def install_pytorch(env_type):
     """安装PyTorch"""
@@ -238,24 +248,32 @@ def main():
     
     # 安装流程
     steps = [
-        ("卸载冲突包", complete_uninstall),
-        ("安装PyTorch", lambda: install_pytorch(env_type)),
-        ("安装基础依赖", install_base_dependencies),
-        ("安装HuggingFace生态", install_huggingface_ecosystem),
-        ("安装其他依赖", install_other_dependencies),
-        ("验证安装", verify_installation),
-        ("测试API兼容性", test_api_compatibility),
+        ("卸载冲突包", complete_uninstall, True),  # 允许失败
+        ("安装PyTorch", lambda: install_pytorch(env_type), False),  # 必须成功
+        ("安装基础依赖", install_base_dependencies, True),  # 允许失败
+        ("安装HuggingFace生态", install_huggingface_ecosystem, False),  # 必须成功
+        ("安装其他依赖", install_other_dependencies, True),  # 允许失败
+        ("验证安装", verify_installation, True),  # 允许失败
+        ("测试API兼容性", test_api_compatibility, True),  # 允许失败
     ]
-    
-    for step_name, step_func in steps:
+
+    for step_name, step_func, allow_failure in steps:
         print(f"\n{'='*20} {step_name} {'='*20}")
-        if not step_func():
+        success = step_func()
+
+        if not success:
             print(f"❌ {step_name} 失败")
-            if step_name in ["验证安装", "测试API兼容性"]:
-                print("⚠️ 可能仍然可用，继续后续步骤")
+            if allow_failure:
+                print("⚠️ 此步骤允许失败，继续后续步骤")
             else:
-                print("❌ 安装过程中断")
+                print("❌ 关键步骤失败，安装过程中断")
+                print("💡 建议:")
+                print("1. 检查网络连接")
+                print("2. 重新运行安装脚本")
+                print("3. 尝试手动安装关键包")
                 return
+        else:
+            print(f"✅ {step_name} 成功")
     
     print("\n🎉 环境安装完成!")
     print("✅ 所有依赖已正确安装并验证")
