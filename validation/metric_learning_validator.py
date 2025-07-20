@@ -314,13 +314,24 @@ class MetricLearningValidator:
         if target_user_id not in self.user_prototypes:
             raise ValueError(f"用户 {target_user_id} 的原型特征不存在")
         
-        # 加载生成图像
+        # 加载生成图像（包括子目录）
         gen_dir = Path(generated_images_dir)
-        image_files = list(gen_dir.glob("*.png")) + list(gen_dir.glob("*.jpg"))
-        
+        image_files = []
+
+        # 搜索所有图像文件（包括子目录）
+        image_files.extend(list(gen_dir.glob("*.png")))
+        image_files.extend(list(gen_dir.glob("*.jpg")))
+        image_files.extend(list(gen_dir.glob("*.jpeg")))
+        image_files.extend(list(gen_dir.glob("**/*.png")))
+        image_files.extend(list(gen_dir.glob("**/*.jpg")))
+        image_files.extend(list(gen_dir.glob("**/*.jpeg")))
+
+        # 去重
+        image_files = list(set(image_files))
+
         if not image_files:
             return {'error': 'No generated images found'}
-        
+
         print(f"  找到 {len(image_files)} 张生成图像")
         
         # 获取目标用户原型
@@ -421,12 +432,33 @@ if __name__ == "__main__":
     print(f"\n🔍 检查生成图像目录: {args.generated_images_dir}")
 
     if Path(args.generated_images_dir).exists():
-        # 检查目录中的图像文件
-        image_files = list(Path(args.generated_images_dir).glob("*.png")) + \
-                     list(Path(args.generated_images_dir).glob("*.jpg")) + \
-                     list(Path(args.generated_images_dir).glob("*.jpeg"))
+        # 检查目录中的图像文件（包括子目录）
+        base_path = Path(args.generated_images_dir)
+        image_files = []
+
+        # 搜索直接在目录下的图像
+        image_files.extend(list(base_path.glob("*.png")))
+        image_files.extend(list(base_path.glob("*.jpg")))
+        image_files.extend(list(base_path.glob("*.jpeg")))
+
+        # 搜索子目录中的图像（如 user_01/ 目录）
+        image_files.extend(list(base_path.glob("**/*.png")))
+        image_files.extend(list(base_path.glob("**/*.jpg")))
+        image_files.extend(list(base_path.glob("**/*.jpeg")))
+
+        # 去重（避免重复计算直接目录下的文件）
+        image_files = list(set(image_files))
 
         print(f"📊 找到 {len(image_files)} 张生成图像")
+        if len(image_files) > 0:
+            print(f"📁 图像分布:")
+            # 显示图像在哪些子目录中
+            subdirs = set(f.parent.name for f in image_files if f.parent != base_path)
+            if subdirs:
+                print(f"  子目录: {', '.join(sorted(subdirs))}")
+            direct_count = sum(1 for f in image_files if f.parent == base_path)
+            if direct_count > 0:
+                print(f"  直接目录: {direct_count} 张")
 
         if len(image_files) > 0:
             print(f"🔍 开始验证生成图像...")
