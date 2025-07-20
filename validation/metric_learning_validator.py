@@ -68,38 +68,30 @@ class SiameseDataset(Dataset):
         
         return img1, img2, label
 
-class OptimizedSiameseNetwork(nn.Module):
-    """优化的Siamese网络 - 利用更多GPU资源"""
+class SmallDataSiameseNetwork(nn.Module):
+    """小数据集专用Siamese网络 - 防止过拟合"""
 
-    def __init__(self, embedding_dim=256, use_larger_model=True):
-        super(OptimizedSiameseNetwork, self).__init__()
+    def __init__(self, embedding_dim=64):
+        super(SmallDataSiameseNetwork, self).__init__()
 
-        # 根据GPU资源选择模型大小
-        if use_larger_model:
-            from torchvision.models import resnet34
-            self.backbone = resnet34(pretrained=True)
-            print("  🚀 使用ResNet34（更大模型，利用闲置GPU资源）")
-        else:
-            self.backbone = resnet18(pretrained=True)
-            print("  🚀 使用ResNet18（标准模型）")
+        # 使用ResNet18，参数量适中
+        self.backbone = resnet18(pretrained=True)
+        print("  🎯 小数据集优化：使用ResNet18 + 简化分类头")
 
-        # 更深的特征提取头
-        in_features = self.backbone.fc.in_features
+        # 简化的特征提取头（防止过拟合）
+        in_features = self.backbone.fc.in_features  # 512
         self.backbone.fc = nn.Sequential(
-            nn.Dropout(0.4),
-            nn.Linear(in_features, 512),
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, embedding_dim),
-            nn.BatchNorm1d(embedding_dim),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(embedding_dim, embedding_dim)
+            nn.Dropout(0.5),  # 更强的dropout
+            nn.Linear(in_features, embedding_dim),  # 直接降到64维
         )
 
         # 相似性计算
         self.similarity = nn.CosineSimilarity(dim=1)
+
+        # 打印参数量
+        total_params = sum(p.numel() for p in self.parameters())
+        trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        print(f"  📊 模型参数: 总计 {total_params:,}, 可训练 {trainable_params:,}")
         
     def forward_one(self, x):
         """单个图像的前向传播"""
@@ -124,11 +116,23 @@ class MetricLearningValidator:
     
     def __init__(self, device="auto"):
         if device == "auto":
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            if torch.cuda.is_available():
+                try:
+                    # 测试CUDA是否正常工作
+                    test_tensor = torch.randn(10, 10).cuda()
+                    _ = test_tensor + test_tensor
+                    self.device = torch.device("cuda")
+                    print(f"🚀 使用设备: {self.device}")
+                except Exception as e:
+                    print(f"⚠️ CUDA测试失败: {e}")
+                    print(f"🔄 回退到CPU训练")
+                    self.device = torch.device("cpu")
+            else:
+                self.device = torch.device("cpu")
+                print(f"🚀 使用设备: {self.device}")
         else:
             self.device = torch.device(device)
-        
-        print(f"🚀 使用设备: {self.device}")
+            print(f"🚀 使用设备: {self.device}")
         
         # 图像变换
         self.transform = transforms.Compose([
@@ -193,14 +197,14 @@ class MetricLearningValidator:
 
         print(f"  🔧 训练配置: batch_size={batch_size}, 每epoch {total_batches} 个batch")
         
-        # 创建优化的模型（利用闲置GPU资源）
-        self.model = OptimizedSiameseNetwork(embedding_dim=256, use_larger_model=True).to(self.device)
+        # 创建小数据集专用模型（防止过拟合）
+        self.model = SmallDataSiameseNetwork(embedding_dim=64).to(self.device)
         
-        # 优化器和损失函数（优化配置）
+        # 小数据集优化配置（防止过拟合）
         optimizer = torch.optim.AdamW(
             self.model.parameters(),
-            lr=2e-3,  # 提高学习率，加速收敛
-            weight_decay=1e-4,
+            lr=1e-3,  # 降低学习率，防止过拟合
+            weight_decay=1e-2,  # 增强权重衰减
             betas=(0.9, 0.999),
             eps=1e-8
         )
@@ -216,7 +220,12 @@ class MetricLearningValidator:
 
         # P100不使用混合精度（Pascal架构支持有限）
         print(f"  🔧 P100优化：不使用混合精度训练")
-        
+
+        # 早停机制（防止过拟合）
+        best_loss = float('inf')
+        patience = 5  # 小数据集用更小的patience
+        patience_counter = 0
+
         # 训练循环
         history = {'train_loss': [], 'train_acc': []}
         
@@ -249,14 +258,25 @@ class MetricLearningValidator:
 
             # 更新学习率
             scheduler.step()
-            
+
             avg_loss = total_loss / len(dataloader)
             accuracy = correct / total
-            
+
             history['train_loss'].append(avg_loss)
             history['train_acc'].append(accuracy)
-            
-            print(f"  Epoch {epoch+1}: Loss: {avg_loss:.4f}, Acc: {accuracy:.4f}")
+
+            # 早停检查
+            if avg_loss < best_loss:
+                best_loss = avg_loss
+                patience_counter = 0
+                print(f"  Epoch {epoch+1}: Loss: {avg_loss:.4f}, Acc: {accuracy:.4f} ✅")
+            else:
+                patience_counter += 1
+                print(f"  Epoch {epoch+1}: Loss: {avg_loss:.4f}, Acc: {accuracy:.4f} (无改善: {patience_counter}/{patience})")
+
+                if patience_counter >= patience:
+                    print(f"  🛑 早停触发：{patience}个epoch无改善，防止过拟合")
+                    break
         
         print(f"✅ Siamese网络训练完成")
         return history
@@ -365,6 +385,8 @@ if __name__ == "__main__":
                        help="批次大小（小数据集推荐16-32）")
     parser.add_argument("--use_larger_model", action="store_true",
                        help="使用更大的模型（ResNet34）")
+    parser.add_argument("--force_cpu", action="store_true",
+                       help="强制使用CPU训练（GPU有问题时）")
 
     args = parser.parse_args()
 
