@@ -118,6 +118,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Augment工具配置
+.augment/
+
 # Weights & Biases
 wandb/
 
