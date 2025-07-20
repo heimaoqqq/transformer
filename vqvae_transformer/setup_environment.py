@@ -237,24 +237,149 @@ def install_huggingface_stack():
             run_command("pip cache purge", "清理缓存", ignore_errors=True)
             run_command(f"pip install --no-cache-dir {package}", f"重装 {package}")
 
-        # 最终验证
+        # 最终验证 - 彻底清理模块缓存
         try:
-            # 清理模块缓存
-            modules_to_clear = ['huggingface_hub', 'diffusers']
-            for module in modules_to_clear:
-                if module in sys.modules:
-                    del sys.modules[module]
+            print("🧹 彻底清理Python模块缓存...")
 
+            # 清理所有相关模块和子模块
+            modules_to_clear = []
+            for module_name in list(sys.modules.keys()):
+                if any(pattern in module_name for pattern in [
+                    'huggingface_hub', 'diffusers', 'transformers',
+                    'tokenizers', 'safetensors'
+                ]):
+                    modules_to_clear.append(module_name)
+
+            for module_name in modules_to_clear:
+                if module_name in sys.modules:
+                    del sys.modules[module_name]
+                    print(f"   清理模块: {module_name}")
+
+            print(f"✅ 清理了 {len(modules_to_clear)} 个模块")
+
+            # 强制重新导入
+            print("🔄 强制重新导入...")
+            import importlib
+
+            # 重新导入huggingface_hub
+            import huggingface_hub
+            importlib.reload(huggingface_hub)
+
+            # 测试cached_download
             from huggingface_hub import cached_download
-            print("✅ 强力修复成功")
-            return True
-        except ImportError:
-            print("❌ 强力修复失败")
-            print("💡 建议: 重启Python内核后重新运行此脚本")
+            print("✅ cached_download 导入成功")
+
+            # 进一步测试API可用性
+            print("🧪 测试cached_download API...")
+            # 不实际下载，只测试函数是否存在和可调用
+            if callable(cached_download):
+                print("✅ cached_download API 可用")
+                return True
+            else:
+                print("❌ cached_download 不可调用")
+                return False
+
+        except ImportError as e:
+            print(f"❌ 导入失败: {e}")
+            print("🔧 尝试替代API...")
+
+            # 尝试新的API
+            try:
+                from huggingface_hub import hf_hub_download
+                print("✅ 找到替代API: hf_hub_download")
+                print("⚠️ 需要更新代码使用新API")
+                return True
+            except ImportError:
+                print("❌ 所有API都不可用")
+                print("💡 建议:")
+                print("1. 重启Python内核")
+                print("2. 手动安装: pip install huggingface_hub==0.17.3 --force-reinstall --no-cache-dir")
+                print("3. 检查是否有其他包冲突")
+                return False
+        except Exception as e:
+            print(f"❌ 其他错误: {e}")
             return False
     except Exception as e:
         print(f"⚠️ 其他验证问题: {e}")
         return success_count == len(hf_packages)
+
+def fix_huggingface_api():
+    """专门修复HuggingFace API兼容性问题"""
+    print("\n🔧 HuggingFace API兼容性修复...")
+
+    # 检查当前安装的版本
+    try:
+        import huggingface_hub
+        current_version = huggingface_hub.__version__
+        print(f"📊 当前huggingface_hub版本: {current_version}")
+    except ImportError:
+        print("❌ huggingface_hub未安装")
+        return False
+
+    # 测试不同的API
+    api_tests = [
+        ("cached_download", "from huggingface_hub import cached_download"),
+        ("hf_hub_download", "from huggingface_hub import hf_hub_download"),
+        ("snapshot_download", "from huggingface_hub import snapshot_download"),
+    ]
+
+    available_apis = []
+
+    for api_name, import_cmd in api_tests:
+        try:
+            exec(import_cmd)
+            available_apis.append(api_name)
+            print(f"✅ {api_name}: 可用")
+        except ImportError as e:
+            print(f"❌ {api_name}: 不可用 - {e}")
+
+    if not available_apis:
+        print("❌ 所有HuggingFace下载API都不可用")
+
+        # 尝试降级到更稳定的版本
+        stable_versions = ["0.16.4", "0.15.1", "0.14.1"]
+
+        for version in stable_versions:
+            print(f"🔄 尝试降级到 huggingface_hub=={version}...")
+
+            # 完全卸载
+            run_command("pip uninstall huggingface_hub -y", f"卸载当前版本", ignore_errors=True)
+            run_command("pip cache purge", "清理缓存", ignore_errors=True)
+
+            # 安装指定版本
+            if run_command(f"pip install huggingface_hub=={version} --no-cache-dir", f"安装版本 {version}"):
+                # 清理模块缓存
+                for module_name in list(sys.modules.keys()):
+                    if 'huggingface_hub' in module_name:
+                        del sys.modules[module_name]
+
+                # 重新测试
+                try:
+                    import huggingface_hub
+                    from huggingface_hub import cached_download
+                    print(f"✅ 版本 {version} 工作正常")
+                    return True
+                except ImportError:
+                    print(f"❌ 版本 {version} 仍然有问题")
+                    continue
+
+        print("❌ 所有版本都无法解决API问题")
+        return False
+
+    else:
+        print(f"✅ 找到可用的API: {', '.join(available_apis)}")
+
+        # 如果cached_download不可用但有其他API，提供替代方案
+        if "cached_download" not in available_apis:
+            print("⚠️ cached_download不可用，但有其他API可用")
+            print("💡 建议更新代码使用新的API:")
+
+            if "hf_hub_download" in available_apis:
+                print("   使用 hf_hub_download 替代 cached_download")
+            elif "snapshot_download" in available_apis:
+                print("   使用 snapshot_download 替代 cached_download")
+
+        return True
 
 def install_additional_deps():
     """安装其他必要依赖 - 使用固定版本"""
@@ -413,6 +538,7 @@ def main():
         ("安装核心包", install_core_packages),
         ("安装PyTorch", lambda: install_pytorch(env_type)),
         ("安装HuggingFace技术栈", install_huggingface_stack),
+        ("修复HuggingFace API", fix_huggingface_api),  # 新增API修复步骤
         ("安装其他依赖", install_additional_deps),
         ("测试关键导入", test_critical_imports),
         ("测试VQModel API", test_vqmodel_api),

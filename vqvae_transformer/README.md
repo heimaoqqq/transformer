@@ -185,7 +185,12 @@ python training/train_transformer.py \
 3. **cached_download不可用**:
    ```bash
    # 如果遇到 "cannot import name 'cached_download'" 错误
-   pip install huggingface_hub==0.17.3 --force-reinstall
+
+   # 方法1: 使用诊断工具
+   python diagnose_api.py --fix
+
+   # 方法2: 手动修复
+   pip install huggingface_hub==0.17.3 --force-reinstall --no-cache-dir
    python setup_environment.py
    ```
 
@@ -197,6 +202,13 @@ python training/train_transformer.py \
    # 使用经过验证的固定版本组合
    python setup_environment.py
    ```
+
+### 诊断工具
+```bash
+# API兼容性诊断工具
+python diagnose_api.py           # 诊断API问题
+python diagnose_api.py --fix     # 自动修复API问题
+```
 
 ### 经过验证的版本组合
 ```bash
