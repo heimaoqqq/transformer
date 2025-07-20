@@ -105,10 +105,22 @@ def install_compatible_versions():
     print("\n🔥 安装PyTorch...")
     pytorch_success = False
     
+    # 使用正确的PyTorch版本对应关系
     pytorch_options = [
-        "pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118",
+        # 方案1: PyTorch 2.0.1 (推荐，与transformers 4.30.2兼容)
+        "pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118",
+
+        # 方案2: 使用Kaggle预装版本 (如果可用)
+        "pip install torch torchvision torchaudio --upgrade",
+
+        # 方案3: PyTorch 1.13.1 (稳定版本)
         "pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --index-url https://download.pytorch.org/whl/cu117",
-        "pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1",
+
+        # 方案4: 最新稳定版本
+        "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118",
+
+        # 方案5: CPU版本 (备用)
+        "pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cpu",
     ]
     
     for i, cmd in enumerate(pytorch_options, 1):

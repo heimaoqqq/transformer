@@ -58,9 +58,9 @@ python check_environment.py
 ```bash
 cd vqvae_transformer
 
-# 安装与diffusers 0.24.0兼容的版本组合
+# 安装与diffusers 0.24.0兼容的版本组合 (正确的版本对应关系)
 pip install numpy==1.26.4
-pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
+pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
 pip install huggingface_hub==0.16.4
 pip install transformers==4.30.2
 pip install diffusers==0.24.0
@@ -169,7 +169,17 @@ python training/train_transformer.py \
 ## 🔍 故障排除
 
 ### 环境问题
-1. **numpy/JAX兼容性问题** (常见):
+1. **PyTorch依赖冲突** (常见):
+   ```bash
+   # 如果遇到PyTorch版本冲突错误
+   python check_pytorch_compatibility.py --fix
+
+   # 或手动修复
+   pip uninstall torch torchvision torchaudio -y
+   pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
+   ```
+
+2. **numpy/JAX兼容性问题**:
    ```bash
    # 如果遇到 "module 'numpy' has no attribute 'dtypes'" 错误
    pip install numpy==1.26.4
@@ -211,11 +221,20 @@ python diagnose_api.py           # 诊断API问题
 python diagnose_api.py --fix     # 自动修复API问题
 ```
 
+### PyTorch兼容性检查
+```bash
+# PyTorch版本兼容性检查工具
+python check_pytorch_compatibility.py           # 检查当前PyTorch状态
+python check_pytorch_compatibility.py --fix     # 自动修复PyTorch问题
+```
+
 ### 经过验证的版本组合
 ```bash
-# 与diffusers 0.24.0兼容的版本组合 (解决PyTorch和API兼容性问题)
+# 与diffusers 0.24.0兼容的版本组合 (正确的版本对应关系)
 numpy==1.26.4
 torch==2.0.1               # 与transformers 4.30.2兼容
+torchvision==0.15.1        # 与torch 2.0.1对应 (重要!)
+torchaudio==2.0.1          # 与torch 2.0.1对应
 huggingface_hub==0.16.4    # 支持cached_download，与diffusers兼容
 transformers==4.30.2       # 稳定版本，避免PyTorch _C错误
 diffusers==0.24.0          # 目标版本

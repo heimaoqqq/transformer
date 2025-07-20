@@ -147,16 +147,20 @@ def install_pytorch(env_type):
         # GPU环境：使用与transformers 4.30.2兼容的PyTorch版本
         pytorch_options = [
             {
-                "cmd": "pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118",
-                "desc": "PyTorch 2.0.1 CUDA 11.8版本 (与transformers 4.30.2兼容)"
+                "cmd": "pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118",
+                "desc": "PyTorch 2.0.1 CUDA 11.8版本 (正确版本对应)"
+            },
+            {
+                "cmd": "pip install torch torchvision torchaudio --upgrade",
+                "desc": "使用Kaggle预装版本 (如果可用)"
             },
             {
                 "cmd": "pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --index-url https://download.pytorch.org/whl/cu117",
                 "desc": "PyTorch 1.13.1 CUDA 11.7版本 (稳定版本)"
             },
             {
-                "cmd": "pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1",
-                "desc": "PyTorch 2.0.1 默认版本"
+                "cmd": "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118",
+                "desc": "最新稳定版本"
             }
         ]
     else:
@@ -164,11 +168,11 @@ def install_pytorch(env_type):
         # CPU环境：使用CPU版本
         pytorch_options = [
             {
-                "cmd": "pip install torch==2.0.1+cpu torchvision==0.15.2+cpu torchaudio==2.0.1+cpu --index-url https://download.pytorch.org/whl/cpu",
-                "desc": "PyTorch 2.0.1 CPU版本"
+                "cmd": "pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cpu",
+                "desc": "PyTorch 2.0.1 CPU版本 (正确版本对应)"
             },
             {
-                "cmd": "pip install torch==1.13.1+cpu torchvision==0.14.1+cpu torchaudio==0.13.1+cpu --index-url https://download.pytorch.org/whl/cpu",
+                "cmd": "pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --index-url https://download.pytorch.org/whl/cpu",
                 "desc": "PyTorch 1.13.1 CPU版本"
             }
         ]
