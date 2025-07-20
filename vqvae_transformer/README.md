@@ -47,44 +47,27 @@ vqvae_transformer/
 ```bash
 cd vqvae_transformer
 
-# 统一环境安装脚本 - 自动检测环境并安装兼容版本
+# 统一环境安装脚本 - 解决numpy/JAX兼容性和API版本问题
 python setup_environment.py
 
 # 验证环境是否正确
 python check_environment.py
 ```
 
-#### 快速修复 (如果安装失败)
-```bash
-cd vqvae_transformer
-
-# 快速修复脚本 - 跳过卸载，直接覆盖安装
-python quick_fix_environment.py
-
-# 验证修复结果
-python check_environment.py
-```
-
-#### API兼容性测试 (详细诊断)
-```bash
-cd vqvae_transformer
-
-# 详细的API兼容性测试和诊断
-python test_api_compatibility.py
-
-# 查看详细报告
-cat api_compatibility_report.md
-```
-
 #### 手动安装 (如果自动安装失败)
 ```bash
 cd vqvae_transformer
 
-# ⚠️ 先卸载可能冲突的包
-pip uninstall diffusers transformers huggingface-hub accelerate -y
+# 安装兼容的numpy版本 (解决JAX兼容性问题)
+pip install 'numpy>=1.26.0,<2.0.0'
 
-# 安装兼容版本组合
-pip install huggingface-hub==0.17.3 transformers==4.35.2 diffusers==0.24.0 accelerate==0.24.1
+# 安装HuggingFace技术栈
+pip install 'huggingface-hub>=0.17.0,<0.25.0'
+pip install 'transformers>=4.35.0,<4.45.0'
+pip install 'diffusers>=0.24.0,<0.30.0'
+pip install 'accelerate>=0.24.0,<0.35.0'
+
+# 安装其他依赖
 pip install -r requirements.txt
 
 # 验证安装
@@ -187,44 +170,33 @@ python training/train_transformer.py \
 ## 🔍 故障排除
 
 ### 环境问题
-1. **安装过程中断** (常见):
+1. **numpy/JAX兼容性问题** (常见):
    ```bash
-   # 如果setup_environment.py失败，使用快速修复
-   python quick_fix_environment.py
+   # 如果遇到 "module 'numpy' has no attribute 'dtypes'" 错误
+   pip install 'numpy>=1.26.0,<2.0.0'
+   python setup_environment.py
    ```
 
-2. **VQModel导入失败** (新问题):
+2. **VQModel导入失败**:
    ```bash
    # 如果遇到 "No module named 'diffusers.models.autoencoders'" 错误
-   python test_api_compatibility.py  # 详细诊断
-   python quick_fix_environment.py   # 快速修复
+   python setup_environment.py  # 自动检测API路径
    ```
 
-3. **diffusers兼容性问题**:
+3. **transformers导入失败**:
    ```bash
-   # 如果遇到 "cannot import name 'cached_download'" 错误
-   python quick_fix_environment.py
-   ```
-
-4. **API不兼容**:
-   ```bash
-   # 重新安装兼容版本
+   # 如果遇到transformers相关错误
+   pip install 'transformers>=4.35.0,<4.45.0'
    python setup_environment.py
-
-   # 如果仍然失败
-   python quick_fix_environment.py
    ```
 
-5. **版本冲突**:
+4. **版本冲突**:
    ```bash
    # 检查版本
    python check_environment.py
 
-   # 详细诊断
-   python test_api_compatibility.py
-
-   # 手动安装兼容版本
-   pip install huggingface-hub==0.17.3 transformers==4.35.2 diffusers==0.24.0 --force-reinstall
+   # 重新安装兼容版本
+   python setup_environment.py
    ```
 
 3. **CUDA问题**:

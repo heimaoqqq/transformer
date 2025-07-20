@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 VQ-VAE + Transformer 统一环境安装脚本
-自动检测环境类型并安装兼容的依赖版本
-解决diffusers、transformers等API兼容性问题
+解决numpy/JAX兼容性和API版本问题
 """
 
 import os
@@ -10,10 +9,9 @@ import sys
 import subprocess
 import importlib
 
-def run_command(cmd, description=""):
+def run_command(cmd, description="", allow_failure=False):
     """运行命令并处理错误"""
     print(f"🔄 {description}")
-    print(f"   命令: {cmd}")
     
     try:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
@@ -23,6 +21,9 @@ def run_command(cmd, description=""):
         print(f"❌ {description} 失败")
         if e.stderr.strip():
             print(f"   错误: {e.stderr.strip()}")
+        if allow_failure:
+            print("⚠️ 此步骤允许失败，继续...")
+            return True
         return False
 
 def detect_environment():
@@ -43,34 +44,31 @@ def detect_environment():
     print("✅ 检测到本地环境")
     return "local"
 
-def complete_uninstall():
-    """完全卸载可能冲突的包"""
-    print("\n🗑️ 卸载可能冲突的包...")
-
-    packages_to_remove = [
-        "diffusers", "transformers", "accelerate",
-        "huggingface-hub", "tokenizers", "safetensors",
-        "datasets", "evaluate", "peft", "trl",
-        "torch-audio", "torchaudio", "torchtext", "torchdata",
-        "sentencepiece", "protobuf", "wandb", "tensorboardX",
+def install_core_packages():
+    """安装核心包 - 解决numpy/JAX兼容性问题"""
+    print("\n🔧 安装核心包...")
+    
+    # 先安装兼容的numpy版本 - 解决JAX兼容性问题
+    success = run_command("pip install 'numpy>=1.26.0,<2.0.0'", "安装兼容的numpy")
+    if not success:
+        run_command("pip install numpy==1.26.4", "安装numpy (指定版本)")
+    
+    # 安装其他核心依赖
+    core_deps = [
+        "pillow>=9.0.0",
+        "requests>=2.28.0", 
+        "packaging>=21.0",
+        "filelock>=3.0.0",
+        "tqdm>=4.64.0",
+        "pyyaml>=6.0",
+        "typing-extensions>=4.0.0",
+        "regex>=2022.0.0",
     ]
-
-    uninstall_success = True
-
-    for round_num in range(2):
-        print(f"第 {round_num + 1} 轮卸载:")
-        for package in packages_to_remove:
-            success = run_command(f"pip uninstall {package} -y", f"卸载 {package}")
-            if not success:
-                print(f"⚠️ {package} 卸载失败或不存在，继续...")
-
-    # 清理pip缓存 - 即使失败也继续
-    cache_success = run_command("pip cache purge", "清理pip缓存")
-    if not cache_success:
-        print("⚠️ pip缓存清理失败，继续安装...")
-
-    print("✅ 卸载步骤完成 (部分失败不影响后续安装)")
-    return True  # 总是返回True，不阻断后续安装
+    
+    for dep in core_deps:
+        run_command(f"pip install '{dep}'", f"安装 {dep.split('>=')[0]}", allow_failure=True)
+    
+    return True
 
 def install_pytorch(env_type):
     """安装PyTorch"""
@@ -84,183 +82,180 @@ def install_pytorch(env_type):
         except ImportError:
             pass
     
-    # 安装GPU版本
-    cmd = "pip install torch==2.1.0+cu118 torchvision==0.16.0+cu118 torchaudio==2.1.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118"
-    return run_command(cmd, "安装PyTorch")
-
-def install_base_dependencies():
-    """安装基础依赖"""
-    print("\n📦 安装基础依赖...")
+    # 安装PyTorch
+    cmd = "pip install 'torch>=2.0.0' 'torchvision>=0.15.0' 'torchaudio>=2.0.0' --index-url https://download.pytorch.org/whl/cu118"
+    success = run_command(cmd, "安装PyTorch (CUDA)")
     
-    base_deps = [
-        "numpy==1.24.3", "pillow==10.0.1", "requests==2.31.0",
-        "packaging==23.2", "filelock==3.13.1", "tqdm==4.66.1",
-        "pyyaml==6.0.1", "typing-extensions==4.8.0", "regex==2023.10.3",
-    ]
-    
-    for dep in base_deps:
-        run_command(f"pip install {dep}", f"安装 {dep}")
+    if not success:
+        cmd = "pip install 'torch>=2.0.0' 'torchvision>=0.15.0' 'torchaudio>=2.0.0'"
+        run_command(cmd, "安装PyTorch (CPU)")
     
     return True
 
-def install_huggingface_ecosystem():
-    """安装HuggingFace生态系统 (兼容版本)"""
-    print("\n🤗 安装HuggingFace生态系统...")
+def install_huggingface_stack():
+    """安装HuggingFace技术栈"""
+    print("\n🤗 安装HuggingFace技术栈...")
     
+    # 按依赖顺序安装
     hf_packages = [
-        ("huggingface-hub==0.17.3", "HuggingFace Hub (支持cached_download)"),
-        ("tokenizers==0.14.1", "Tokenizers"),
-        ("safetensors==0.4.0", "SafeTensors"),
-        ("transformers==4.35.2", "Transformers"),
-        ("accelerate==0.24.1", "Accelerate"),
-        ("diffusers==0.24.0", "Diffusers"),
+        ("huggingface-hub>=0.17.0,<0.25.0", "HuggingFace Hub"),
+        ("tokenizers>=0.14.0,<0.20.0", "Tokenizers"),
+        ("safetensors>=0.4.0,<0.5.0", "SafeTensors"),
+        ("transformers>=4.35.0,<4.45.0", "Transformers"),
+        ("accelerate>=0.24.0,<0.35.0", "Accelerate"),
+        ("diffusers>=0.24.0,<0.30.0", "Diffusers"),
     ]
     
-    for package, description in hf_packages:
-        success = run_command(f"pip install {package} --no-deps", f"安装 {description}")
+    for package_spec, name in hf_packages:
+        success = run_command(f"pip install '{package_spec}'", f"安装 {name}")
         if not success:
-            run_command(f"pip install {package} --force-reinstall --no-deps", f"强制重装 {description}")
+            package_name = package_spec.split('>=')[0].split('<')[0]
+            run_command(f"pip install {package_name}", f"安装 {name} (无版本限制)", allow_failure=True)
     
     return True
 
-def install_other_dependencies():
+def install_additional_deps():
     """安装其他必要依赖"""
     print("\n📚 安装其他依赖...")
     
-    other_deps = [
-        "scipy==1.11.4", "scikit-learn==1.3.0", "scikit-image==0.21.0",
-        "matplotlib==3.7.2", "opencv-python==4.8.1.78", "einops==0.7.0",
-        "tensorboard==2.15.1", "lpips==0.1.4",
+    additional_deps = [
+        "scipy>=1.9.0",
+        "scikit-learn>=1.1.0", 
+        "scikit-image>=0.19.0",
+        "matplotlib>=3.5.0",
+        "opencv-python>=4.6.0",
+        "einops>=0.6.0",
+        "tensorboard>=2.10.0",
+        "lpips>=0.1.4",
     ]
     
-    for dep in other_deps:
-        run_command(f"pip install {dep}", f"安装 {dep}")
+    for dep in additional_deps:
+        run_command(f"pip install '{dep}'", f"安装 {dep.split('>=')[0]}", allow_failure=True)
     
     return True
 
-def verify_installation():
-    """验证安装"""
-    print("\n🔍 验证安装...")
+def test_critical_imports():
+    """测试关键导入"""
+    print("\n🧪 测试关键导入...")
     
-    critical_packages = {
-        'torch': None,
-        'diffusers': '0.24.0',
-        'transformers': '4.35.2', 
-        'accelerate': '0.24.1',
-        'huggingface_hub': '0.17.3',
-    }
+    critical_tests = [
+        ("torch", "PyTorch"),
+        ("diffusers", "Diffusers"),
+        ("transformers", "Transformers"),
+        ("huggingface_hub", "HuggingFace Hub"),
+        ("accelerate", "Accelerate"),
+    ]
     
     all_good = True
     
-    for package, expected_version in critical_packages.items():
+    for module_name, display_name in critical_tests:
         try:
-            module = importlib.import_module(package)
-            actual_version = getattr(module, '__version__', 'unknown')
-            
-            if expected_version is None or expected_version in actual_version:
-                print(f"✅ {package}: {actual_version}")
-            else:
-                print(f"⚠️ {package}: 期望 {expected_version}, 实际 {actual_version}")
-                
+            module = importlib.import_module(module_name)
+            version = getattr(module, '__version__', 'unknown')
+            print(f"✅ {display_name}: {version}")
         except ImportError as e:
-            print(f"❌ {package}: 导入失败 - {e}")
+            print(f"❌ {display_name}: 导入失败 - {e}")
             all_good = False
     
     return all_good
 
-def test_api_compatibility():
-    """测试API兼容性"""
-    print("\n🧪 测试API兼容性...")
+def test_vqmodel_api():
+    """测试VQModel API"""
+    print("\n🎨 测试VQModel API...")
     
-    # 测试cached_download
-    try:
-        from huggingface_hub import cached_download
-        print("✅ cached_download: 可用")
-    except ImportError as e:
-        print(f"❌ cached_download: 不可用 - {e}")
+    # 尝试不同的导入路径
+    VQModel = None
+    
+    import_attempts = [
+        ("diffusers.models.autoencoders.vq_model", "新版API"),
+        ("diffusers.models.vq_model", "旧版API"),
+        ("diffusers", "直接导入"),
+    ]
+    
+    for module_path, description in import_attempts:
+        try:
+            if module_path == "diffusers":
+                from diffusers import VQModel
+            else:
+                module = importlib.import_module(module_path)
+                VQModel = getattr(module, 'VQModel')
+            
+            print(f"✅ VQModel导入成功: {description}")
+            break
+        except (ImportError, AttributeError):
+            continue
+    
+    if VQModel is None:
+        print("❌ VQModel: 所有导入路径都失败")
         return False
     
-    # 测试VQModel - 尝试不同的导入路径
-    vqmodel_success = False
-
-    # 尝试新版本API路径
+    # 测试创建和使用
     try:
-        from diffusers.models.autoencoders.vq_model import VQModel
-        print("✅ VQModel: 可用 (新版API)")
-        vqmodel_success = True
-    except ImportError:
-        # 尝试旧版本API路径
-        try:
-            from diffusers.models.vq_model import VQModel
-            print("✅ VQModel: 可用 (旧版API)")
-            vqmodel_success = True
-        except ImportError:
-            # 尝试更旧的API路径
-            try:
-                from diffusers import VQModel
-                print("✅ VQModel: 可用 (直接导入)")
-                vqmodel_success = True
-            except ImportError:
-                print("❌ VQModel: 所有导入路径都失败")
-                return False
+        import torch
+        model = VQModel(
+            in_channels=3,
+            out_channels=3,
+            down_block_types=["DownEncoderBlock2D"],
+            up_block_types=["UpDecoderBlock2D"],
+            block_out_channels=[64],
+            layers_per_block=1,
+            latent_channels=64,
+            sample_size=32,
+            num_vq_embeddings=128,
+            norm_num_groups=32,
+            vq_embed_dim=64,
+        )
+        
+        test_input = torch.randn(1, 3, 32, 32)
+        with torch.no_grad():
+            result = model.encode(test_input)
+            decoded = model.decode(result.latents)
+            print(f"✅ VQModel测试通过")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ VQModel创建/测试失败: {e}")
+        return False
 
-    if vqmodel_success:
-        try:
-            import torch
-            # 使用更简单的配置避免参数错误
-            model = VQModel(
-                in_channels=3,
-                out_channels=3,
-                down_block_types=["DownEncoderBlock2D"],
-                up_block_types=["UpDecoderBlock2D"],
-                block_out_channels=[64],
-                layers_per_block=1,
-                latent_channels=64,
-                sample_size=32,
-                num_vq_embeddings=128,
-                norm_num_groups=32,
-                vq_embed_dim=64,
-            )
-
-            test_input = torch.randn(1, 3, 32, 32)
-            with torch.no_grad():
-                result = model.encode(test_input)
-                print("✅ VQModel测试: 通过")
-
-        except Exception as e:
-            print(f"❌ VQModel创建/测试失败: {e}")
-            print("⚠️ VQModel导入成功但创建失败，可能是参数问题")
-            # 不返回False，因为导入成功就说明API可用
+def test_transformer_api():
+    """测试Transformer API"""
+    print("\n🤖 测试Transformer API...")
     
-    # 测试Transformer
     try:
         from transformers import GPT2Config, GPT2LMHeadModel
         
-        config = GPT2Config(vocab_size=256, n_positions=64, n_embd=128, n_layer=2, n_head=4)
+        config = GPT2Config(
+            vocab_size=256,
+            n_positions=64,
+            n_embd=128,
+            n_layer=2,
+            n_head=4,
+            use_cache=False,
+        )
+        
         model = GPT2LMHeadModel(config)
         
         import torch
         test_input = torch.randint(0, 256, (1, 16))
         with torch.no_grad():
             output = model(test_input)
-            print("✅ Transformer测试: 通过")
-            
+            print(f"✅ Transformer测试通过")
+        
+        return True
+        
     except Exception as e:
-        print(f"❌ Transformer测试: 失败 - {e}")
+        print(f"❌ Transformer测试失败: {e}")
         return False
-    
-    return True
 
 def main():
     """主函数"""
     print("🎨 VQ-VAE + Transformer 统一环境安装器")
     print("=" * 60)
-    print("🔧 自动检测环境并安装兼容版本")
-    print("⚠️ 这将卸载并重新安装相关包，确保版本兼容性")
+    print("🔧 解决numpy/JAX兼容性和API版本问题")
     
     # 检测环境
     env_type = detect_environment()
-    
     print(f"\n📊 环境类型: {env_type}")
     
     # 确认操作
@@ -272,38 +267,46 @@ def main():
     
     # 安装流程
     steps = [
-        ("卸载冲突包", complete_uninstall, True),  # 允许失败
-        ("安装PyTorch", lambda: install_pytorch(env_type), False),  # 必须成功
-        ("安装基础依赖", install_base_dependencies, True),  # 允许失败
-        ("安装HuggingFace生态", install_huggingface_ecosystem, False),  # 必须成功
-        ("安装其他依赖", install_other_dependencies, True),  # 允许失败
-        ("验证安装", verify_installation, True),  # 允许失败
-        ("测试API兼容性", test_api_compatibility, True),  # 允许失败
+        ("安装核心包", install_core_packages),
+        ("安装PyTorch", lambda: install_pytorch(env_type)),
+        ("安装HuggingFace技术栈", install_huggingface_stack),
+        ("安装其他依赖", install_additional_deps),
+        ("测试关键导入", test_critical_imports),
+        ("测试VQModel API", test_vqmodel_api),
+        ("测试Transformer API", test_transformer_api),
     ]
-
-    for step_name, step_func, allow_failure in steps:
+    
+    failed_steps = []
+    
+    for step_name, step_func in steps:
         print(f"\n{'='*20} {step_name} {'='*20}")
         success = step_func()
-
+        
         if not success:
             print(f"❌ {step_name} 失败")
-            if allow_failure:
-                print("⚠️ 此步骤允许失败，继续后续步骤")
-            else:
-                print("❌ 关键步骤失败，安装过程中断")
-                print("💡 建议:")
-                print("1. 检查网络连接")
-                print("2. 重新运行安装脚本")
-                print("3. 尝试手动安装关键包")
-                return
+            failed_steps.append(step_name)
         else:
             print(f"✅ {step_name} 成功")
     
-    print("\n🎉 环境安装完成!")
-    print("✅ 所有依赖已正确安装并验证")
-    print("✅ API兼容性测试通过")
-    print("\n🚀 现在可以开始训练:")
-    print("   python train_main.py --data_dir /path/to/data")
+    # 总结
+    print(f"\n{'='*20} 安装总结 {'='*20}")
+    
+    if not failed_steps:
+        print("🎉 环境安装完全成功!")
+        print("✅ 所有组件正常工作")
+        print("\n🚀 现在可以开始训练:")
+        print("   python train_main.py --data_dir /path/to/data")
+    else:
+        print(f"⚠️ 部分步骤失败: {', '.join(failed_steps)}")
+        
+        if "测试关键导入" not in failed_steps:
+            print("✅ 基础环境安装成功，可以尝试运行")
+            print("💡 建议重启Python内核后再次测试")
+        else:
+            print("❌ 基础环境有问题，建议:")
+            print("1. 重启Python内核")
+            print("2. 重新运行此脚本")
+            print("3. 检查网络连接")
 
 if __name__ == "__main__":
     main()
