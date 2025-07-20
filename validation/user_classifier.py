@@ -219,25 +219,42 @@ class UserValidationSystem:
         else:
             print(f"  警告: 用户 {user_id} 真实图像目录不存在: {real_dir}")
         
-        # 负样本: 其他用户的图像 (改进的采样策略)
+        # 负样本: 其他用户的图像 (改进的分层采样策略)
         max_negative_samples = int(len(real_images) * negative_ratio)
         print(f"  目标负样本数量: {max_negative_samples} 张 (比例 {negative_ratio}:1)")
 
-        # 收集所有其他用户的图像
-        all_negative_images = []
-        for other_dir in other_users_dirs:
-            other_path = Path(other_dir)
-            if other_path.exists():
-                other_images = list(other_path.glob("*.png")) + list(other_path.glob("*.jpg"))
-                all_negative_images.extend(other_images)
+        # 分层采样：确保每个其他用户都有代表性
+        selected_negative = []
+        user_sample_counts = {}
 
-        # 随机采样负样本，确保代表性
-        import random
-        if len(all_negative_images) > max_negative_samples:
-            selected_negative = random.sample(all_negative_images, max_negative_samples)
+        # 计算每个用户应该采样的数量
+        if len(other_users_dirs) > 0:
+            base_samples_per_user = max_negative_samples // len(other_users_dirs)
+            remainder = max_negative_samples % len(other_users_dirs)
+
+            print(f"  分层采样策略: {len(other_users_dirs)}个其他用户, 每用户{base_samples_per_user}张")
+
+            import random
+            for i, other_dir in enumerate(other_users_dirs):
+                other_path = Path(other_dir)
+                if other_path.exists():
+                    other_images = list(other_path.glob("*.png")) + list(other_path.glob("*.jpg"))
+
+                    # 前remainder个用户多采样1张
+                    current_samples = base_samples_per_user + (1 if i < remainder else 0)
+                    current_samples = min(current_samples, len(other_images))  # 不超过可用数量
+
+                    if current_samples > 0:
+                        selected = random.sample(other_images, current_samples)
+                        selected_negative.extend(selected)
+
+                        # 记录采样统计
+                        user_id = other_path.name.replace("ID_", "") if "ID_" in other_path.name else other_path.name
+                        user_sample_counts[user_id] = current_samples
+
+            print(f"  负样本分布: {user_sample_counts}")
         else:
-            selected_negative = all_negative_images
-            print(f"  警告: 可用负样本({len(all_negative_images)})少于目标数量({max_negative_samples})")
+            print(f"  警告: 没有其他用户目录可用于负样本")
 
         # 添加负样本
         image_paths.extend([str(p) for p in selected_negative])

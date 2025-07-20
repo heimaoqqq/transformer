@@ -230,7 +230,7 @@ class ConditionalDiffusionValidator:
             real_images_dir=str(target_user_dir),
             other_users_dirs=[str(d) for d in other_user_dirs],
             max_samples_per_class=self.config.max_samples_per_class,
-            negative_ratio=3.0  # 负样本是正样本的3倍
+            negative_ratio=8.0  # 负样本是正样本的8倍，确保充分覆盖所有其他用户
         )
 
     def generate_images(self) -> Optional[str]:
