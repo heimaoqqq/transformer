@@ -77,11 +77,11 @@ def test_vqmodel_import():
         import subprocess
         import sys
 
-        # 尝试多种可能的导入路径
+        # 基于网上调研，正确的导入路径是 diffusers.models.autoencoders.vq_model
         import_tests = [
-            "from diffusers.models.autoencoders.vq_model import VQModel; print('SUCCESS_PATH1')",
-            "from diffusers.models.vq_model import VQModel; print('SUCCESS_PATH2')",
-            "from diffusers import VQModel; print('SUCCESS_PATH3')",
+            "from diffusers.models.autoencoders.vq_model import VQModel; print('SUCCESS_CORRECT_PATH')",
+            "from diffusers.models.vq_model import VQModel; print('SUCCESS_OLD_PATH')",
+            "from diffusers import VQModel; print('SUCCESS_DIRECT_IMPORT')",
         ]
 
         for i, test_code in enumerate(import_tests, 1):
@@ -118,31 +118,31 @@ def install_core_dependencies():
     # 第二步：使用确定支持VQModel的版本组合
     print("\n🔧 安装确定支持VQModel的版本组合...")
 
-    # 这个版本组合是经过验证的，确实支持VQModel
+    # 基于网上调研，VQModel在diffusers 0.31版本被移除，0.30.x是最后支持的版本
     known_working_versions = [
-        # 版本组合1: 较新但稳定
+        # 版本组合1: diffusers 0.30.x (最后支持VQModel的版本)
         {
-            "huggingface_hub": "0.16.4",
-            "transformers": "4.30.2",
-            "diffusers": "0.18.2",
-            "accelerate": "0.20.3",
+            "huggingface_hub": "0.20.3",
+            "transformers": "4.36.2",
+            "diffusers": "0.30.3",
+            "accelerate": "0.25.0",
+            "peft": "0.6.2"
+        },
+        # 版本组合2: diffusers 0.29.x (稳定版本)
+        {
+            "huggingface_hub": "0.19.4",
+            "transformers": "4.35.2",
+            "diffusers": "0.29.2",
+            "accelerate": "0.24.1",
+            "peft": "0.5.0"
+        },
+        # 版本组合3: diffusers 0.28.x (保守版本)
+        {
+            "huggingface_hub": "0.18.0",
+            "transformers": "4.34.1",
+            "diffusers": "0.28.2",
+            "accelerate": "0.23.0",
             "peft": "0.4.0"
-        },
-        # 版本组合2: 更保守
-        {
-            "huggingface_hub": "0.15.1",
-            "transformers": "4.28.1",
-            "diffusers": "0.17.1",
-            "accelerate": "0.19.0",
-            "peft": "0.3.0"
-        },
-        # 版本组合3: 最保守
-        {
-            "huggingface_hub": "0.14.1",
-            "transformers": "4.26.1",
-            "diffusers": "0.16.1",
-            "accelerate": "0.18.0",
-            "peft": "0.2.0"
         }
     ]
 
@@ -297,9 +297,9 @@ def main():
     print("🎨 VQ-VAE + Transformer 统一环境配置脚本")
     print("=" * 60)
     print("🎯 一个环境支持VQ-VAE和Transformer训练")
-    print("💡 使用确定支持VQModel的版本组合")
-    print("🔧 自动尝试多个已知可用的版本组合")
-    print("⚠️ 如果失败，建议使用分阶段训练")
+    print("💡 基于网上调研：VQModel在diffusers 0.31版本被移除")
+    print("🔧 使用diffusers 0.30.x版本 (最后支持VQModel的版本)")
+    print("📍 正确导入路径: from diffusers.models.autoencoders.vq_model import VQModel")
     print()
 
     steps = [

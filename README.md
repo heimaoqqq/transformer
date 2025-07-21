@@ -383,16 +383,28 @@ diffusers==0.24.0          # 目标版本
 - 验证指标追踪
 
 ### 依赖冲突解决
-```bash
-# 常见问题1: OfflineModeIsEnabled导入错误
-# 错误: "cannot import name 'OfflineModeIsEnabled' from 'huggingface_hub.utils'"
-# 解决: setup_unified_environment.py 已自动修复此问题
 
-# 常见问题2: NumPy版本冲突
+#### **VQModel版本问题** ⭐ **重要发现**
+```bash
+# 问题: VQModel在diffusers 0.31版本被移除
+# 错误: "No module named 'diffusers.models.autoencoders.vq_model'"
+# 解决: 使用diffusers 0.30.x版本 (最后支持VQModel的版本)
+
+# 正确的版本组合:
+# diffusers==0.30.3 + transformers==4.36.2 + huggingface_hub==0.20.3
+```
+
+#### **其他常见问题**
+```bash
+# 问题1: OfflineModeIsEnabled导入错误
+# 错误: "cannot import name 'OfflineModeIsEnabled' from 'huggingface_hub.utils'"
+# 解决: setup_unified_environment.py 已自动修复
+
+# 问题2: NumPy版本冲突
 # 错误: "NumPy 1.x cannot be run in NumPy 2.x"
 # 解决: 自动降级到NumPy 1.x版本
 
-# 常见问题3: VQModel导入失败
+# 问题3: 如果统一环境仍失败
 # 使用分阶段训练作为备选
 python setup_vqvae_environment.py
 python test_api_compatibility.py
