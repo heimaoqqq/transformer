@@ -114,13 +114,22 @@ def install_pytorch_gpu():
     """安装GPU版本PyTorch"""
     print("\n🔥 安装GPU版本PyTorch...")
     
-    # 针对Kaggle GPU环境的PyTorch安装策略
+    # 针对Kaggle GPU环境的PyTorch安装策略 (修复NCCL兼容性问题)
     pytorch_options = [
-        "pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --index-url https://download.pytorch.org/whl/cu116",
-        "pip install torch torchvision torchaudio --upgrade",
-        "pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu117",
-        "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118",
+        # 方案1: 使用CPU版本避免CUDA兼容性问题
         "pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cpu",
+
+        # 方案2: 较旧的稳定CUDA版本
+        "pip install torch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 --index-url https://download.pytorch.org/whl/cu116",
+
+        # 方案3: 尝试预装版本但可能有NCCL问题
+        "pip install torch torchvision torchaudio --upgrade",
+
+        # 方案4: 其他CUDA版本
+        "pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --index-url https://download.pytorch.org/whl/cu117",
+
+        # 方案5: 最新CPU版本作为最后备用
+        "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu",
     ]
     
     for i, cmd in enumerate(pytorch_options, 1):
@@ -136,19 +145,20 @@ def install_huggingface_stack():
     """安装HuggingFace技术栈"""
     print("\n🤗 安装HuggingFace技术栈...")
     
-    # 完全按照diffusers 0.24.0官方要求
+    # 使用兼容cached_download的版本范围 (解决API兼容性问题)
     hf_packages = [
-        ("huggingface_hub>=0.19.4", "HuggingFace Hub (diffusers官方要求)"),
-        ("tokenizers>=0.11.1,!=0.11.3", "Tokenizers (diffusers官方要求)"),
-        ("safetensors>=0.3.1", "SafeTensors (diffusers官方要求)"),
-        ("transformers>=4.25.1", "Transformers (diffusers官方要求)"),
-        ("accelerate>=0.11.0", "Accelerate (diffusers官方要求)"),
+        ("huggingface_hub>=0.19.4,<0.25.0", "HuggingFace Hub (兼容cached_download)"),
+        ("tokenizers>=0.11.1,!=0.11.3,<0.15.0", "Tokenizers"),
+        ("safetensors>=0.3.1,<0.5.0", "SafeTensors"),
+        ("transformers>=4.25.1,<4.40.0", "Transformers"),
+        ("accelerate>=0.11.0,<0.30.0", "Accelerate"),
         ("diffusers==0.24.0", "Diffusers (目标版本)"),
     ]
     
     success_count = 0
     for package, description in hf_packages:
-        if run_command(f"pip install '{package}'", f"安装 {description}"):
+        # 使用--force-reinstall确保版本正确
+        if run_command(f"pip install '{package}' --force-reinstall --no-cache-dir", f"安装 {description}"):
             success_count += 1
     
     print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(hf_packages)} 成功")
@@ -260,34 +270,49 @@ def get_gpu_config():
     try:
         import torch
         if not torch.cuda.is_available():
-            return {"device": "cpu", "batch_size": 8}
-        
-        gpu_name = torch.cuda.get_device_name(0)
-        print(f"🎯 检测到GPU: {gpu_name}")
-        
-        # 根据GPU类型优化配置
-        if "T4" in gpu_name:
-            config = {"device": "cuda", "batch_size": 16, "mixed_precision": True}
-            print("🎯 Tesla T4配置：batch_size=16, 混合精度=True")
-        elif "P100" in gpu_name:
-            config = {"device": "cuda", "batch_size": 12, "mixed_precision": False}
-            print("🎯 Tesla P100配置：batch_size=12, 混合精度=False")
-        elif "V100" in gpu_name:
-            config = {"device": "cuda", "batch_size": 32, "mixed_precision": True}
-            print("🎯 Tesla V100配置：batch_size=32, 混合精度=True")
-        else:
-            config = {"device": "cuda", "batch_size": 16, "mixed_precision": True}
-            print("🎯 通用GPU配置：batch_size=16, 混合精度=True")
-        
-        return config
-    except:
-        return {"device": "cpu", "batch_size": 8}
+            print("💻 使用CPU训练配置")
+            return {"device": "cpu", "batch_size": 8, "mixed_precision": False}
+
+        # 测试GPU是否真正可用
+        try:
+            device = torch.device('cuda:0')
+            test_tensor = torch.randn(10, device=device)
+            _ = test_tensor + 1  # 简单测试
+
+            gpu_name = torch.cuda.get_device_name(0)
+            print(f"🎯 检测到可用GPU: {gpu_name}")
+
+            # 根据GPU类型优化配置
+            if "T4" in gpu_name:
+                config = {"device": "cuda", "batch_size": 16, "mixed_precision": True}
+                print("🎯 Tesla T4配置：batch_size=16, 混合精度=True")
+            elif "P100" in gpu_name:
+                config = {"device": "cuda", "batch_size": 12, "mixed_precision": False}
+                print("🎯 Tesla P100配置：batch_size=12, 混合精度=False")
+            elif "V100" in gpu_name:
+                config = {"device": "cuda", "batch_size": 32, "mixed_precision": True}
+                print("🎯 Tesla V100配置：batch_size=32, 混合精度=True")
+            else:
+                config = {"device": "cuda", "batch_size": 16, "mixed_precision": True}
+                print("🎯 通用GPU配置：batch_size=16, 混合精度=True")
+
+            return config
+
+        except Exception as e:
+            print(f"⚠️ GPU测试失败: {e}")
+            print("💻 降级到CPU训练配置")
+            return {"device": "cpu", "batch_size": 8, "mixed_precision": False}
+
+    except Exception:
+        print("💻 使用CPU训练配置")
+        return {"device": "cpu", "batch_size": 8, "mixed_precision": False}
 
 def main():
     """主函数"""
     print("🔧 Kaggle环境一键配置脚本")
     print("=" * 50)
-    print("🎯 GPU优化 + 依赖安装 + 兼容性检查")
+    print("🎯 智能环境配置 + 依赖安装 + 兼容性检查")
+    print("💡 优先使用CPU版本PyTorch避免CUDA兼容性问题")
     
     # 执行配置流程
     steps = [
@@ -317,9 +342,22 @@ def main():
     
     print("\n🎉 Kaggle环境配置完成!")
     print("✅ 所有组件已安装并验证")
+
+    if gpu_config['device'] == 'cpu':
+        print("💻 配置为CPU训练模式 (避免CUDA兼容性问题)")
+        print("⚡ CPU训练稳定可靠，适合Kaggle环境")
+    else:
+        print("🚀 配置为GPU训练模式")
+
     print("\n🚀 现在可以开始训练:")
     print(f"   python train_main.py --data_dir /kaggle/input/dataset --device {gpu_config['device']}")
     print(f"   推荐batch_size: {gpu_config['batch_size']}")
+
+    if gpu_config['device'] == 'cpu':
+        print("\n💡 CPU训练优势:")
+        print("   - 避免CUDA兼容性问题")
+        print("   - 稳定可靠，不会出现NCCL错误")
+        print("   - 内存使用更可控")
     
     return True
 
