@@ -336,12 +336,30 @@ class VQVAETrainer:
             # 显示码本使用情况
             if (epoch + 1) % self.args.codebook_monitor_interval == 0:
                 stats = self.model.get_codebook_stats()
-                print(f"  码本使用率: {stats['usage_rate']:.3f} ({stats['active_codes']}/{stats['total_codes']})")
-                print(f"  使用熵: {stats['usage_entropy']:.3f}")
-                
+                print(f"  📊 码本使用率: {stats['usage_rate']:.3f} ({stats['active_codes']}/{stats['total_codes']})")
+                print(f"  📈 使用熵: {stats['usage_entropy']:.3f}")
+
+                # 坍缩警告
+                if stats['usage_rate'] < 0.1:
+                    print(f"  ⚠️ 警告: 码本使用率过低，可能发生坍缩!")
+                elif stats['usage_rate'] < 0.3:
+                    print(f"  ⚠️ 注意: 码本使用率较低")
+                else:
+                    print(f"  ✅ 码本使用率正常")
+
                 # 保存码本使用图
                 usage_plot_path = self.output_dir / f"codebook_usage_epoch_{epoch+1:03d}.png"
                 self.model.plot_codebook_usage(str(usage_plot_path))
+
+            # 损失趋势分析
+            if hasattr(self, 'loss_history'):
+                self.loss_history.append(train_metrics['total_loss'])
+                if len(self.loss_history) >= 3:
+                    recent_trend = self.loss_history[-3:]
+                    if all(recent_trend[i] < recent_trend[i+1] for i in range(len(recent_trend)-1)):
+                        print(f"  ⚠️ 警告: 损失连续上升 {recent_trend}")
+            else:
+                self.loss_history = [train_metrics['total_loss']]
         
         print(f"\n✅ VQ-VAE训练完成!")
         print(f"   最佳PSNR: {best_psnr:.2f} dB")
@@ -375,7 +393,7 @@ def main():
     parser.add_argument("--num_workers", type=int, default=4, help="数据加载器工作进程数")
     parser.add_argument("--sample_interval", type=int, default=500, help="样本保存间隔")
     parser.add_argument("--eval_interval", type=int, default=5, help="评估间隔")
-    parser.add_argument("--codebook_monitor_interval", type=int, default=10, help="码本监控间隔")
+    parser.add_argument("--codebook_monitor_interval", type=int, default=1, help="码本监控间隔")
     
     args = parser.parse_args()
     
