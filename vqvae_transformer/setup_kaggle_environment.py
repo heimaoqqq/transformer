@@ -10,7 +10,7 @@ import os
 import importlib
 import time
 
-def run_command(cmd, description="", timeout=120):
+def run_command(cmd, description="", timeout=600):
     """运行命令"""
     print(f"🔄 {description}")
     print(f"   命令: {cmd}")
@@ -162,6 +162,21 @@ def install_huggingface_stack():
             success_count += 1
     
     print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(hf_packages)} 成功")
+
+    # 强制重新安装huggingface_hub到指定版本（解决依赖冲突问题）
+    print("\n🔧 强制锁定huggingface_hub版本...")
+    if run_command("pip install 'huggingface_hub==0.19.4' --force-reinstall --no-deps", "锁定 HuggingFace Hub 0.19.4"):
+        print("✅ HuggingFace Hub版本锁定成功")
+    else:
+        print("⚠️ HuggingFace Hub版本锁定失败")
+
+    # 如果accelerate安装失败，单独重试
+    if success_count < len(hf_packages):
+        print("\n🔧 重试失败的包...")
+        if run_command("pip install 'accelerate>=0.11.0' --no-cache-dir", "重试安装 Accelerate"):
+            success_count += 1
+            print("✅ Accelerate重试安装成功")
+
     return success_count >= len(hf_packages) - 1  # 允许1个失败
 
 def install_other_dependencies():
