@@ -14,11 +14,11 @@ cd transformer
 # 2. 配置环境
 python setup_unified_environment.py
 
-# 3. API兼容性检查
-python test_api_compatibility.py
-
-# 4. 环境测试
+# 3. 验证环境安装
 python test_unified_environment.py
+
+# 4. 完整API兼容性检查
+python test_api_compatibility.py
 
 # 5. 开始训练
 python train_main.py --data_dir /path/to/dataset
@@ -28,10 +28,12 @@ python train_main.py --data_dir /path/to/dataset
 ```bash
 # VQ-VAE阶段
 python setup_vqvae_environment.py
+python test_api_compatibility.py  # 验证VQ-VAE环境
 python train_main.py --skip_transformer --data_dir /path/to/dataset
 
 # Transformer阶段 (重启后)
 python setup_transformer_environment.py
+python test_api_compatibility.py  # 验证Transformer环境
 python train_main.py --skip_vqvae --data_dir /path/to/dataset
 ```
 
@@ -111,10 +113,13 @@ python train_main.py --skip_vqvae --data_dir /path/to/dataset
 
 ### 使用方法
 ```bash
-# 运行完整API兼容性检查
+# 1. 先配置环境
+python setup_unified_environment.py
+
+# 2. 运行完整API兼容性检查
 python test_api_compatibility.py
 
-# 查看生成的报告
+# 3. 查看生成的报告
 cat api_compatibility_report.txt
 ```
 

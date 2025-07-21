@@ -50,7 +50,13 @@ vqvae_transformer/
 # 1. 配置统一环境
 python setup_unified_environment.py
 
-# 2. 完整训练流程
+# 2. 验证环境安装
+python test_unified_environment.py
+
+# 3. 完整API兼容性检查
+python test_api_compatibility.py
+
+# 4. 完整训练流程
 python train_main.py --data_dir /kaggle/input/dataset
 
 # 或分步骤训练
@@ -68,7 +74,10 @@ python train_main.py --skip_vqvae --data_dir /kaggle/input/dataset        # 仅T
 # 1. 配置VQ-VAE专用环境
 python setup_vqvae_environment.py
 
-# 2. 训练VQ-VAE (跳过Transformer)
+# 2. 验证VQ-VAE环境
+python test_api_compatibility.py
+
+# 3. 训练VQ-VAE (跳过Transformer)
 python train_main.py --skip_transformer --data_dir /kaggle/input/dataset
 
 # 或使用专用脚本
@@ -88,7 +97,10 @@ python training/train_vqvae.py --data_dir /kaggle/input/dataset --output_dir ./o
 # 1. 重启环境并配置Transformer专用环境
 python setup_transformer_environment.py
 
-# 2. 训练Transformer (跳过VQ-VAE)
+# 2. 验证Transformer环境
+python test_api_compatibility.py
+
+# 3. 训练Transformer (跳过VQ-VAE)
 python train_main.py --skip_vqvae --data_dir /kaggle/input/dataset
 
 # 或使用专用脚本

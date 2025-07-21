@@ -2,6 +2,11 @@
 """
 完整的API兼容性检查脚本
 验证diffusers、transformers和自定义模型的API兼容性
+
+⚠️ 重要：请在环境配置完成后运行此脚本
+使用方法：
+1. 先运行: python setup_unified_environment.py
+2. 再运行: python test_api_compatibility.py
 """
 
 import torch
@@ -388,6 +393,14 @@ class APICompatibilityChecker:
 
 def main():
     """主函数"""
+    print("⚠️ 重要提醒：请确保已完成环境配置")
+    print("   如果尚未配置环境，请先运行:")
+    print("   python setup_unified_environment.py")
+    print("   或")
+    print("   python setup_vqvae_environment.py")
+    print("   python setup_transformer_environment.py")
+    print()
+
     checker = APICompatibilityChecker()
     results = checker.run_full_check()
     

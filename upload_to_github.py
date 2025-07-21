@@ -271,6 +271,8 @@ def main():
     print("   git clone git@github.com:heimaoqqq/transformer.git")
     print("   cd transformer")
     print("   python setup_unified_environment.py")
+    print("   python test_unified_environment.py")
+    print("   python test_api_compatibility.py")
     
     return True
 
