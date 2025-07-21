@@ -10,9 +10,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import Dict, Tuple, Optional
-from diffusers.models.autoencoders.vq_model import VQModel
-from diffusers.models.autoencoders.vq_model import VectorQuantizer
 import matplotlib.pyplot as plt
+
+# 条件导入diffusers - 在Transformer环境中可能不可用
+try:
+    from diffusers.models.autoencoders.vq_model import VQModel
+    from diffusers.models.autoencoders.vq_model import VectorQuantizer
+    DIFFUSERS_AVAILABLE = True
+except ImportError:
+    print("⚠️ diffusers不可用，使用兼容模式")
+    DIFFUSERS_AVAILABLE = False
+    # 创建兼容的基类
+    class VQModel(nn.Module):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+
+    class VectorQuantizer(nn.Module):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
 
 class EMAVectorQuantizer(nn.Module):
     """
