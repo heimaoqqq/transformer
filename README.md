@@ -50,6 +50,9 @@ vqvae_transformer/
 # 1. 配置统一环境
 python setup_unified_environment.py
 
+# 如果遇到依赖冲突，运行修复脚本
+python fix_dependency_conflicts.py
+
 # 2. 验证环境安装
 python test_unified_environment.py
 
@@ -382,10 +385,30 @@ diffusers==0.24.0          # 目标版本
 - 生成样本质量监控
 - 验证指标追踪
 
+### 依赖冲突解决
+```bash
+# 常见问题1: NumPy版本冲突
+# 错误: "NumPy 1.x cannot be run in NumPy 2.x"
+python fix_dependency_conflicts.py
+
+# 常见问题2: torchao依赖缺失
+# 错误: "No module named 'torch.sparse._triton_ops_meta'"
+pip uninstall torchao -y
+python setup_unified_environment.py
+
+# 常见问题3: VQModel导入失败
+# 使用分阶段训练作为备选
+python setup_vqvae_environment.py
+python test_api_compatibility.py
+```
+
 ### 环境验证命令
 ```bash
-# 快速检查
-python check_environment.py
+# 完整API兼容性检查
+python test_api_compatibility.py
+
+# 快速环境检查
+python test_unified_environment.py
 
 # 详细环境信息
 python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
