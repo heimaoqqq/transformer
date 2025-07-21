@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
 Transformer阶段专用环境配置脚本
-专注于transformers和序列生成依赖
-使用最新版本获得最佳性能
+专注于transformers和序列生成依赖，使用最新版本获得最佳性能
+
+功能：
+- 安装PyTorch GPU版本
+- 安装最新版transformers和huggingface_hub
+- 安装序列生成和训练加速依赖
+- 检查VQ-VAE模型可用性
+- 测试Transformer环境完整性
 """
 
 import os

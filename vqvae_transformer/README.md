@@ -1,96 +1,130 @@
-# 🎨 VQ-VAE + Transformer 微多普勒生成系统
+# 🎯 VQ-VAE + Transformer 微多普勒时频图生成
 
-基于diffusers和transformers的VQ-VAE + Transformer微多普勒时频图生成系统，专门针对小数据量和用户间微小差异优化。
+基于VQ-VAE和Transformer的微多普勒时频图生成项目，采用**分阶段训练策略**解决依赖冲突问题。
 
-## 🎯 方案优势
+## 🎯 项目特点
 
+- ✅ **分阶段训练**: 解决diffusers与transformers的依赖冲突
+- ✅ **环境优化**: 每个阶段使用最优版本，无妥协
+- ✅ **跨环境兼容**: VQ-VAE模型在不同环境间完全兼容
 - ✅ **更低GPU要求**: 8GB即可训练，16GB绰绰有余
-- ✅ **更适合小数据**: 离散化天然正则化，防止过拟合  
+- ✅ **更适合小数据**: 离散化天然正则化，防止过拟合
 - ✅ **更好的条件控制**: Token级精确控制用户特征
 - ✅ **防码本坍缩**: EMA更新、使用监控、自动重置
-- ✅ **官方支持**: 基于diffusers和transformers，长期维护
 
 ## 📁 项目结构
 
 ```
 vqvae_transformer/
-├── models/                    # 模型定义
-│   ├── __init__.py
-│   ├── vqvae_model.py        # 防坍缩VQ-VAE模型
-│   └── transformer_model.py  # 条件Transformer模型
-├── training/                  # 训练脚本
-│   ├── __init__.py
-│   ├── train_vqvae.py        # VQ-VAE训练
-│   └── train_transformer.py  # Transformer训练
-├── inference/                 # 推理脚本
-│   ├── __init__.py
-│   └── generate.py           # 图像生成
-├── validation/                # 验证框架
-│   ├── __init__.py
-│   └── validator.py          # 专用验证器
-├── utils/                     # 工具函数
-│   ├── __init__.py
-│   ├── data_loader.py        # 数据加载器
-│   └── metrics.py            # 评估指标
-├── train_main.py             # 主训练脚本
-├── generate_main.py          # 主生成脚本
-├── validate_main.py          # 主验证脚本
-├── requirements.txt          # 依赖管理
-└── README.md                 # 本文件
-```
-
+├── models/                              # 模型定义
+│   ├── vqvae_model.py                  # VQ-VAE模型 (MicroDopplerVQVAE)
+│   └── transformer_model.py            # Transformer模型 (GPT2-based)
+├── training/                            # 训练脚本
+│   └── train_vqvae.py                  # VQ-VAE专用训练脚本
+├── utils/                              # 工具函数
+│   ├── data_loader.py                  # 数据加载器
+│   └── metrics.py                      # 评估指标
+├── validation/                         # 验证脚本
+├── inference/                          # 推理脚本
+├── setup_vqvae_environment.py          # 🔧 VQ-VAE阶段环境配置
+├── setup_transformer_environment.py    # 🔧 Transformer阶段环境配置
+├── test_cross_environment_compatibility.py # 🧪 跨环境兼容性测试
+├── train_main.py                       # 主训练脚本 (支持分阶段)
+├── generate_main.py                    # 生成脚本
+└── requirements.txt                    # 基础依赖列表
 ## 🚀 快速开始
 
-### 1. 环境安装 (重要！)
+### 🎯 分阶段训练 (推荐方法)
 
-#### 一键安装 (推荐)
+#### **为什么需要分阶段训练？**
+
+由于依赖冲突问题：
+- **diffusers 0.24.0** 需要 `cached_download` (在 huggingface_hub < 0.26.0 中)
+- **transformers 4.53.2** 要求 `huggingface_hub >= 0.30.0` (没有 cached_download)
+
+分阶段训练完美解决这个冲突，每个阶段使用最优版本。
+
+#### **阶段1: VQ-VAE训练**
+
 ```bash
-cd vqvae_transformer
+# 1. 配置VQ-VAE专用环境
+python setup_vqvae_environment.py
 
-# Kaggle环境一键配置：GPU优化 + 依赖安装 + 兼容性检查
-python setup_kaggle_environment.py
+# 2. 训练VQ-VAE (跳过Transformer)
+python train_main.py --skip_transformer --data_dir /kaggle/input/dataset
 
-# 验证环境是否正确
-python check_environment.py
+# 或使用专用脚本
+python training/train_vqvae.py --data_dir /kaggle/input/dataset --output_dir ./outputs/vqvae
 ```
 
-#### 手动安装 (如果自动安装失败)
+**VQ-VAE环境特点**：
+- ✅ `diffusers==0.24.0` - VQ-VAE核心功能
+- ✅ `huggingface_hub==0.25.2` - 支持cached_download
+- ✅ 专注图像处理和编码/解码
+- ❌ 不安装transformers (避免冲突)
+
+#### **阶段2: Transformer训练**
+
 ```bash
-cd vqvae_transformer
+# 1. 重启环境并配置Transformer专用环境
+python setup_transformer_environment.py
 
-# 安装Kaggle GPU优化的版本组合
-pip install numpy==1.26.4
-pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --index-url https://download.pytorch.org/whl/cu116
-pip install "huggingface_hub>=0.19.4"
-pip install "transformers>=4.25.1"
-pip install "diffusers==0.24.0"
-pip install "accelerate>=0.11.0"
-pip install "safetensors>=0.3.1"
+# 2. 训练Transformer (跳过VQ-VAE)
+python train_main.py --skip_vqvae --data_dir /kaggle/input/dataset
 
-# 安装其他依赖
+# 或使用专用脚本
+python training/train_transformer.py --vqvae_path ./outputs/vqvae --data_dir /kaggle/input/dataset
+```
+
+**Transformer环境特点**：
+- ✅ `transformers>=4.50.0` - 最新功能和性能
+- ✅ `huggingface_hub>=0.30.0` - 最新API
+- ✅ 专注序列生成和语言模型
+- ✅ 加载保存的VQ-VAE模型权重 (完全兼容)
+
+#### **跨环境兼容性测试**
+
+```bash
+# 测试VQ-VAE模型在不同环境间的兼容性
+python test_cross_environment_compatibility.py
+```
+
+### 🔄 其他使用方法
+
+#### **方法1: 同一Notebook分阶段**
+```bash
+# 阶段1: VQ-VAE训练
+python setup_vqvae_environment.py
+python train_main.py --skip_transformer --data_dir /kaggle/input/dataset
+
+# 重启Notebook，阶段2: Transformer训练
+python setup_transformer_environment.py
+python train_main.py --skip_vqvae --data_dir /kaggle/input/dataset
+```
+
+#### **方法2: 两个独立Notebook**
+```bash
+# Notebook 1: VQ-VAE专用
+python setup_vqvae_environment.py
+python training/train_vqvae.py --output_dir /kaggle/working/vqvae_output
+
+# Notebook 2: Transformer专用 (使用Kaggle Dataset共享VQ-VAE模型)
+python setup_transformer_environment.py
+python training/train_transformer.py --vqvae_path /kaggle/input/vqvae-model
+```
+
+#### **方法3: 传统统一环境 (可能有依赖冲突)**
+```bash
+# 安装基础依赖
 pip install -r requirements.txt
 
-# 验证安装
-python check_environment.py
+# 完整训练 (可能遇到依赖冲突)
+python train_main.py --data_dir /path/to/data
 ```
 
-#### 环境要求
-- **Python**: 3.8+
-- **CUDA**: 11.8 (推荐) 或 CPU
-- **GPU内存**: 8GB+ (推荐16GB+)
-- **系统内存**: 16GB+
+## 🎮 使用示例
 
-### 2. 完整训练
-```bash
-python train_main.py \
-    --data_dir "/kaggle/input/dataset" \
-    --output_dir "/kaggle/working/outputs/vqvae_transformer" \
-    --resolution 128 \
-    --codebook_size 1024 \
-    --num_users 31
-```
-
-### 3. 生成图像
+### **生成图像**
 ```bash
 python generate_main.py \
     --model_dir "/kaggle/working/outputs/vqvae_transformer" \
@@ -98,7 +132,7 @@ python generate_main.py \
     --samples_per_user 10
 ```
 
-### 4. 验证质量
+### **验证质量**
 ```bash
 python validate_main.py \
     --model_dir "/kaggle/working/outputs/vqvae_transformer" \
@@ -107,24 +141,64 @@ python validate_main.py \
     --target_user_id 0
 ```
 
-## 🔧 分阶段训练
+## 🔧 技术细节
 
-如果需要分别训练两个阶段：
+### **依赖冲突问题**
 
+| 组件 | VQ-VAE环境 | Transformer环境 |
+|------|-----------|----------------|
+| **diffusers** | 0.24.0 | 不需要 |
+| **transformers** | 不安装 | >=4.50.0 |
+| **huggingface_hub** | 0.25.2 | >=0.30.0 |
+| **PyTorch** | 2.1.0+cu121 | 2.1.0+cu121 |
+
+### **跨环境兼容性保证**
+
+1. **使用自定义模型类**: `MicroDopplerVQVAE` 继承但独立于diffusers
+2. **PyTorch标准权重**: 保存`state_dict`而非整个对象
+3. **配置参数保存**: 重建时使用保存的`args`
+4. **接口稳定性**: Transformer只使用VQ-VAE的核心接口
+
+### **环境要求**
+- **Python**: 3.8+
+- **CUDA**: 12.1 (推荐) 或 11.8
+- **GPU内存**: 8GB+ (推荐16GB+)
+- **系统内存**: 16GB+
+
+## 🔍 故障排除
+
+### **常见问题**
+
+#### **Q: VQ-VAE模型在Transformer阶段找不到？**
 ```bash
-# 阶段1: 训练VQ-VAE
-python training/train_vqvae.py \
-    --data_dir "/kaggle/input/dataset" \
-    --output_dir "outputs/vqvae" \
-    --codebook_size 1024 \
-    --batch_size 16
+# 确保模型路径正确
+ls -la ./outputs/vqvae_transformer/vqvae/
+# 应该看到 best_model.pth 或 final_model.pth
 
-# 阶段2: 训练Transformer
-python training/train_transformer.py \
-    --data_dir "/kaggle/input/dataset" \
-    --vqvae_path "outputs/vqvae" \
-    --output_dir "outputs/transformer" \
-    --batch_size 8
+# 或者指定完整路径
+python training/train_transformer.py --vqvae_path /kaggle/working/outputs/vqvae_transformer/vqvae
+```
+
+#### **Q: 环境配置失败？**
+```bash
+# 清理环境重试
+pip cache purge
+pip uninstall -y torch torchvision torchaudio transformers diffusers huggingface_hub accelerate
+python setup_vqvae_environment.py  # 或 setup_transformer_environment.py
+```
+
+#### **Q: 内存不足？**
+```bash
+# 减小批次大小
+python train_main.py --vqvae_batch_size 8 --transformer_batch_size 4
+```
+
+#### **Q: 依赖冲突？**
+```bash
+# 使用分阶段训练
+python setup_vqvae_environment.py    # VQ-VAE阶段
+# 重启后
+python setup_transformer_environment.py  # Transformer阶段
 ```
 
 ## 📊 核心技术

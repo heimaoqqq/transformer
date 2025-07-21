@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
 VQ-VAE阶段专用环境配置脚本
-专注于diffusers和图像处理依赖
-避免transformers相关的依赖冲突
+专注于diffusers和图像处理依赖，避免transformers相关的依赖冲突
+
+功能：
+- 安装PyTorch GPU版本
+- 安装diffusers==0.24.0和兼容的huggingface_hub
+- 安装图像处理和数值计算依赖
+- 测试VQ-VAE环境完整性
 """
 
 import os
