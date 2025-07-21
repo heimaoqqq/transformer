@@ -163,17 +163,37 @@ def install_huggingface_stack():
     
     print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(hf_packages)} 成功")
 
-    # 强制安装兼容cached_download的huggingface_hub版本
-    print("\n🔧 强制安装兼容版本的huggingface_hub...")
-    compatible_versions = ["0.25.2", "0.24.5", "0.23.4"]
+    # 先卸载预装的huggingface_hub，然后安装兼容版本
+    print("\n🔧 卸载并重新安装兼容版本的huggingface_hub...")
+
+    # 先卸载现有版本
+    run_command("pip uninstall -y huggingface_hub", "卸载预装的huggingface_hub")
+
+    # 清理pip缓存
+    run_command("pip cache purge", "清理pip缓存")
+
+    # 安装兼容版本
+    compatible_versions = ["0.25.2", "0.24.5", "0.23.4", "0.20.1", "0.19.4"]
 
     for version in compatible_versions:
         print(f"🔄 尝试安装 huggingface_hub=={version}")
-        if run_command(f"pip install 'huggingface_hub=={version}' --force-reinstall --no-deps", f"强制安装 huggingface_hub {version}"):
-            print(f"✅ huggingface_hub {version} 安装成功")
-            break
+        if run_command(f"pip install 'huggingface_hub=={version}' --no-deps", f"安装 huggingface_hub {version}"):
+            # 验证cached_download是否可用
+            try:
+                import importlib
+                import sys
+                # 清理模块缓存
+                if 'huggingface_hub' in sys.modules:
+                    del sys.modules['huggingface_hub']
+
+                from huggingface_hub import cached_download
+                print(f"✅ huggingface_hub {version} 安装成功，cached_download可用")
+                break
+            except ImportError:
+                print(f"⚠️ huggingface_hub {version} 安装成功，但cached_download不可用，尝试下一个版本")
+                continue
     else:
-        print("⚠️ 所有兼容版本都安装失败")
+        print("⚠️ 所有兼容版本都安装失败或不包含cached_download")
 
     # 如果有包安装失败，单独重试
     if success_count < len(hf_packages):
