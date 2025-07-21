@@ -145,9 +145,9 @@ def install_huggingface_stack():
     """安装HuggingFace技术栈"""
     print("\n🤗 安装HuggingFace技术栈...")
     
-    # 使用diffusers要求的最低版本，避免新版本API变化问题
+    # 完全按照diffusers 0.24.0官方要求，让pip自动解决依赖
     hf_packages = [
-        ("huggingface_hub==0.19.4", "HuggingFace Hub (diffusers要求的最低版本，可能仍有cached_download)"),
+        ("huggingface_hub>=0.19.4", "HuggingFace Hub (diffusers官方要求)"),
         ("tokenizers>=0.11.1,!=0.11.3", "Tokenizers (diffusers官方要求)"),
         ("safetensors>=0.3.1", "SafeTensors (diffusers官方要求)"),
         ("transformers>=4.25.1", "Transformers (diffusers官方要求)"),
@@ -163,14 +163,7 @@ def install_huggingface_stack():
     
     print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(hf_packages)} 成功")
 
-    # 强制重新安装huggingface_hub到指定版本（解决依赖冲突问题）
-    print("\n🔧 强制锁定huggingface_hub版本...")
-    if run_command("pip install 'huggingface_hub==0.19.4' --force-reinstall --no-deps", "锁定 HuggingFace Hub 0.19.4"):
-        print("✅ HuggingFace Hub版本锁定成功")
-    else:
-        print("⚠️ HuggingFace Hub版本锁定失败")
-
-    # 如果accelerate安装失败，单独重试
+    # 如果有包安装失败，单独重试
     if success_count < len(hf_packages):
         print("\n🔧 重试失败的包...")
         if run_command("pip install 'accelerate>=0.11.0' --no-cache-dir", "重试安装 Accelerate"):
