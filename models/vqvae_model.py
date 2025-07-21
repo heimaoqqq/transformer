@@ -11,10 +11,19 @@ import torch.nn.functional as F
 import numpy as np
 from typing import Dict, Tuple, Optional
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
 # 导入diffusers - 统一环境保证可用
 from diffusers.models.autoencoders.vq_model import VQModel
 from diffusers.models.autoencoders.vq_model import VectorQuantizer
+
+@dataclass
+class VQVAEOutput:
+    """VQ-VAE输出类，兼容diffusers格式"""
+    sample: torch.Tensor
+    vq_loss: torch.Tensor
+    encoding_indices: Optional[torch.Tensor] = None
+    latents: Optional[torch.Tensor] = None
 
 class EMAVectorQuantizer(nn.Module):
     """
@@ -283,16 +292,16 @@ class MicroDopplerVQVAE(VQModel):
         """完整的前向传播"""
         encode_result = self.encode(sample, return_dict=True)
         dec = self.decode(encode_result['latents'])
-        
+
         if not return_dict:
             return (dec, encode_result['vq_loss'])
-        
-        return {
-            'sample': dec,
-            'vq_loss': encode_result['vq_loss'],
-            'encoding_indices': encode_result['encoding_indices'],
-            'latents': encode_result['latents'],
-        }
+
+        return VQVAEOutput(
+            sample=dec,
+            vq_loss=encode_result['vq_loss'],
+            encoding_indices=encode_result['encoding_indices'],
+            latents=encode_result['latents'],
+        )
     
     def get_codebook_stats(self) -> Dict[str, float]:
         """获取码本统计信息"""

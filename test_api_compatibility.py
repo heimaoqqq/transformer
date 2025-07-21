@@ -202,8 +202,8 @@ class APICompatibilityChecker:
                     in_channels=3,
                     out_channels=3,
                     latent_channels=4,
-                    codebook_size=1024,
-                    codebook_dim=256
+                    num_vq_embeddings=1024,
+                    vq_embed_dim=256
                 )
                 results['custom_vqvae_instantiation'] = "SUCCESS"
                 print("✅ MicroDopplerVQVAE实例化成功")
