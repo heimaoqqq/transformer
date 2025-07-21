@@ -72,7 +72,7 @@ class EMAVectorQuantizer(nn.Module):
         """
         # 展平输入 [B, C, H, W] -> [B*H*W, C]
         input_shape = inputs.shape
-        flat_input = inputs.view(-1, self.embed_dim)
+        flat_input = inputs.contiguous().view(-1, self.embed_dim)
         
         # 计算距离
         distances = (torch.sum(flat_input**2, dim=1, keepdim=True) 
@@ -85,7 +85,7 @@ class EMAVectorQuantizer(nn.Module):
         encodings.scatter_(1, encoding_indices, 1)
         
         # 量化
-        quantized = torch.matmul(encodings, self.embedding.weight).view(input_shape)
+        quantized = torch.matmul(encodings, self.embedding.weight).contiguous().view(input_shape)
         
         # 更新EMA (仅在训练时)
         if self.training:
@@ -100,7 +100,7 @@ class EMAVectorQuantizer(nn.Module):
         # Straight-through estimator
         quantized = inputs + (quantized - inputs).detach()
         
-        return quantized, loss, encoding_indices.view(input_shape[0], -1)
+        return quantized, loss, encoding_indices.contiguous().view(input_shape[0], -1)
     
     def _update_ema(self, encodings: torch.Tensor, flat_input: torch.Tensor):
         """更新EMA参数"""

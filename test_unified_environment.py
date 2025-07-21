@@ -115,8 +115,8 @@ def test_custom_models():
             in_channels=3,
             out_channels=3,
             latent_channels=4,
-            codebook_size=1024,
-            codebook_dim=256
+            num_vq_embeddings=1024,
+            vq_embed_dim=256
         )
         print("✅ MicroDopplerVQVAE实例创建成功")
         
