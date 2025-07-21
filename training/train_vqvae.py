@@ -225,12 +225,12 @@ class VQVAETrainer:
         
         for i in range(n_samples):
             # 原图
-            axes[0, i].imshow(original[i].cpu().permute(1, 2, 0))
+            axes[0, i].imshow(original[i].cpu().detach().permute(1, 2, 0).numpy())
             axes[0, i].set_title(f'Original {i+1}')
             axes[0, i].axis('off')
-            
+
             # 重建图
-            axes[1, i].imshow(reconstructed[i].cpu().permute(1, 2, 0))
+            axes[1, i].imshow(reconstructed[i].cpu().detach().permute(1, 2, 0).numpy())
             axes[1, i].set_title(f'Reconstructed {i+1}')
             axes[1, i].axis('off')
         
