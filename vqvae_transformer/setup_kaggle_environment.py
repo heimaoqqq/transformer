@@ -206,7 +206,38 @@ def test_installation():
     for module_name in modules_to_clear:
         if module_name in sys.modules:
             del sys.modules[module_name]
-    
+
+    # 检查依赖冲突
+    print("🔍 检查依赖冲突...")
+    try:
+        packages_to_check = ['transformers', 'accelerate', 'diffusers']
+
+        for package in packages_to_check:
+            try:
+                result = subprocess.run(['pip', 'show', package],
+                                      capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    lines = result.stdout.split('\n')
+                    version = ""
+                    requires = ""
+                    for line in lines:
+                        if line.startswith('Version:'):
+                            version = line.replace('Version:', '').strip()
+                        elif line.startswith('Requires:'):
+                            requires = line.replace('Requires:', '').strip()
+
+                    print(f"📦 {package} {version}")
+                    if 'huggingface-hub' in requires or 'huggingface_hub' in requires:
+                        print(f"   🎯 要求 huggingface_hub: {requires}")
+
+            except Exception as e:
+                print(f"❌ 检查 {package} 失败: {e}")
+
+    except Exception as e:
+        print(f"❌ 依赖检查失败: {e}")
+
+    print()
+
     # 测试关键导入
     tests = [
         ("torch", "PyTorch"),
