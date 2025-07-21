@@ -19,11 +19,11 @@ from PIL import Image
 import matplotlib.pyplot as plt
 
 # 添加项目路径
-sys.path.append(str(Path(__file__).parent.parent.parent))
+sys.path.append(str(Path(__file__).parent.parent))
 
-from vqvae_transformer.models.vqvae_model import MicroDopplerVQVAE
-from vqvae_transformer.utils.data_loader import MicroDopplerDataset
-from vqvae_transformer.utils.metrics import calculate_psnr, calculate_ssim
+from models.vqvae_model import MicroDopplerVQVAE
+from utils.data_loader import MicroDopplerDataset
+from utils.metrics import calculate_psnr, calculate_ssim
 
 class VQVAETrainer:
     """VQ-VAE训练器"""

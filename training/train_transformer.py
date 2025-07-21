@@ -17,11 +17,11 @@ import numpy as np
 import json
 
 # 添加项目路径
-sys.path.append(str(Path(__file__).parent.parent.parent))
+sys.path.append(str(Path(__file__).parent.parent))
 
-from vqvae_transformer.models.transformer_model import MicroDopplerTransformer
-from vqvae_transformer.models.vqvae_model import MicroDopplerVQVAE
-from vqvae_transformer.utils.data_loader import MicroDopplerDataset
+from models.transformer_model import MicroDopplerTransformer
+from models.vqvae_model import MicroDopplerVQVAE
+from utils.data_loader import MicroDopplerDataset
 
 class TransformerTrainer:
     """Transformer训练器"""
