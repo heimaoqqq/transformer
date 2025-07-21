@@ -150,8 +150,8 @@ def install_huggingface_stack():
         ("huggingface_hub>=0.19.4,<0.26.0", "HuggingFace Hub (保留cached_download的最后版本)"),
         ("tokenizers>=0.11.1,!=0.11.3", "Tokenizers (diffusers官方要求)"),
         ("safetensors>=0.3.1", "SafeTensors (diffusers官方要求)"),
-        ("transformers>=4.25.1", "Transformers (diffusers官方要求)"),
-        ("accelerate>=0.11.0", "Accelerate (diffusers官方要求)"),
+        ("transformers==4.30.2", "Transformers (兼容旧版huggingface_hub)"),
+        ("accelerate==0.20.3", "Accelerate (兼容旧版huggingface_hub)"),
         ("diffusers==0.24.0", "Diffusers (目标版本)"),
     ]
     
