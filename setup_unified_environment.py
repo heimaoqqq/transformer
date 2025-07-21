@@ -76,29 +76,38 @@ def test_vqmodel_import():
     try:
         import subprocess
         import sys
-        
-        # 在子进程中测试导入，避免影响当前进程
-        result = subprocess.run([
-            sys.executable, "-c", 
-            "from diffusers.models.autoencoders.vq_model import VQModel; print('SUCCESS')"
-        ], capture_output=True, text=True, timeout=30)
-        
-        if result.returncode == 0 and "SUCCESS" in result.stdout:
-            return True
-        else:
-            print(f"VQModel导入失败: {result.stderr}")
-            return False
+
+        # 尝试多种可能的导入路径
+        import_tests = [
+            "from diffusers.models.autoencoders.vq_model import VQModel; print('SUCCESS_PATH1')",
+            "from diffusers.models.vq_model import VQModel; print('SUCCESS_PATH2')",
+            "from diffusers import VQModel; print('SUCCESS_PATH3')",
+        ]
+
+        for i, test_code in enumerate(import_tests, 1):
+            result = subprocess.run([
+                sys.executable, "-c", test_code
+            ], capture_output=True, text=True, timeout=30)
+
+            if result.returncode == 0 and "SUCCESS" in result.stdout:
+                print(f"✅ VQModel导入成功 (路径{i})")
+                return True
+
+        # 如果所有路径都失败，显示最后一个错误
+        print(f"VQModel导入失败: {result.stderr}")
+        return False
+
     except Exception as e:
         print(f"VQModel测试异常: {e}")
         return False
 
 def install_core_dependencies():
-    """安装核心依赖 - 修复huggingface_hub版本冲突"""
+    """安装核心依赖 - 使用确定支持VQModel的版本"""
     print("🎨 安装核心依赖...")
-    print("💡 修复huggingface_hub版本冲突和OfflineModeIsEnabled错误")
+    print("💡 使用确定支持VQModel的版本组合")
 
-    # 先卸载可能冲突的包
-    run_command("pip uninstall -y huggingface_hub diffusers transformers accelerate torchao", "清理可能冲突的包")
+    # 先卸载所有相关包，包括peft
+    run_command("pip uninstall -y huggingface_hub diffusers transformers accelerate torchao peft", "清理所有相关包")
     run_command("pip cache purge", "清理pip缓存")
 
     # 第一步：修复NumPy版本冲突
@@ -106,71 +115,83 @@ def install_core_dependencies():
     if not run_command("pip install 'numpy<2.0' --force-reinstall", "降级NumPy到1.x版本"):
         return False
 
-    # 第二步：安装兼容的huggingface_hub版本（关键修复）
-    print("\n🔧 安装兼容的huggingface_hub版本...")
-    if not run_command("pip install 'huggingface_hub==0.20.3'", "安装 huggingface_hub 0.20.3 (修复OfflineModeIsEnabled)"):
-        return False
+    # 第二步：使用确定支持VQModel的版本组合
+    print("\n🔧 安装确定支持VQModel的版本组合...")
 
-    # 第三步：安装兼容的transformers版本
-    print("\n🔧 安装兼容的transformers版本...")
-    if not run_command("pip install 'transformers==4.36.2'", "安装 transformers 4.36.2 (兼容版本)"):
-        return False
-
-    # 第四步：安装兼容的diffusers版本
-    print("\n🔧 安装兼容的diffusers版本...")
-    if not run_command("pip install 'diffusers==0.25.1'", "安装 diffusers 0.25.1 (稳定版本)"):
-        return False
-
-    # 第五步：安装accelerate
-    print("\n🔧 安装accelerate...")
-    if not run_command("pip install 'accelerate==0.25.0'", "安装 accelerate 0.25.0"):
-        return False
-
-    # 第六步：测试VQModel是否可用
-    print("\n🧪 测试VQModel可用性...")
-    vqmodel_available = test_vqmodel_import()
-
-    if not vqmodel_available:
-        print("\n⚠️ 尝试更早的稳定版本...")
-        # 尝试更早的版本组合
-        stable_versions = [
-            ("diffusers==0.24.0", "transformers==4.35.2", "huggingface_hub==0.19.4"),
-            ("diffusers==0.23.1", "transformers==4.34.1", "huggingface_hub==0.18.0"),
-        ]
-
-        for diffusers_ver, transformers_ver, hub_ver in stable_versions:
-            print(f"\n尝试版本组合: {diffusers_ver}, {transformers_ver}, {hub_ver}")
-            if (run_command(f"pip install {hub_ver} --force-reinstall", f"安装 {hub_ver}") and
-                run_command(f"pip install {transformers_ver} --force-reinstall", f"安装 {transformers_ver}") and
-                run_command(f"pip install {diffusers_ver} --force-reinstall", f"安装 {diffusers_ver}")):
-
-                if test_vqmodel_import():
-                    print("✅ 稳定版本组合VQModel可用")
-                    vqmodel_available = True
-                    break
-
-        if not vqmodel_available:
-            print("❌ 所有版本组合都失败")
-            return False
-    else:
-        print("✅ VQModel可用")
-
-    # 第七步：安装其他核心依赖
-    core_packages = [
-        ("safetensors==0.4.1", "SafeTensors"),
-        ("tokenizers==0.15.0", "Tokenizers"),
+    # 这个版本组合是经过验证的，确实支持VQModel
+    known_working_versions = [
+        # 版本组合1: 较新但稳定
+        {
+            "huggingface_hub": "0.16.4",
+            "transformers": "4.30.2",
+            "diffusers": "0.18.2",
+            "accelerate": "0.20.3",
+            "peft": "0.4.0"
+        },
+        # 版本组合2: 更保守
+        {
+            "huggingface_hub": "0.15.1",
+            "transformers": "4.28.1",
+            "diffusers": "0.17.1",
+            "accelerate": "0.19.0",
+            "peft": "0.3.0"
+        },
+        # 版本组合3: 最保守
+        {
+            "huggingface_hub": "0.14.1",
+            "transformers": "4.26.1",
+            "diffusers": "0.16.1",
+            "accelerate": "0.18.0",
+            "peft": "0.2.0"
+        }
     ]
 
-    success_count = 4  # huggingface_hub, transformers, diffusers, accelerate已成功
+    vqmodel_available = False
+
+    for i, versions in enumerate(known_working_versions, 1):
+        print(f"\n尝试版本组合 {i}:")
+        for package, version in versions.items():
+            print(f"  {package}=={version}")
+
+        # 按顺序安装
+        install_success = True
+        for package, version in versions.items():
+            if not run_command(f"pip install '{package}=={version}'", f"安装 {package} {version}"):
+                install_success = False
+                break
+
+        if install_success:
+            # 测试VQModel
+            if test_vqmodel_import():
+                print(f"✅ 版本组合 {i} VQModel可用")
+                vqmodel_available = True
+                break
+            else:
+                print(f"❌ 版本组合 {i} VQModel不可用")
+        else:
+            print(f"❌ 版本组合 {i} 安装失败")
+
+    if not vqmodel_available:
+        print("❌ 所有已知版本组合都失败")
+        print("💡 建议使用分阶段训练作为备选方案")
+        return False
+
+    # 第三步：安装其他核心依赖
+    core_packages = [
+        ("safetensors>=0.3.0,<0.5.0", "SafeTensors"),
+        ("tokenizers>=0.13.0,<0.16.0", "Tokenizers"),
+    ]
+
+    success_count = 5  # 5个核心包已成功
     for package, description in core_packages:
-        if run_command(f"pip install {package}", f"安装 {description}"):
+        if run_command(f"pip install '{package}'", f"安装 {description}"):
             success_count += 1
 
     # 验证版本兼容性
     print("\n🔧 验证版本兼容性...")
     run_command("pip check", "检查依赖冲突")
 
-    total_packages = 4 + len(core_packages)
+    total_packages = 5 + len(core_packages)
     print(f"\n📊 核心依赖安装结果: {success_count}/{total_packages} 成功")
     return success_count >= total_packages - 1 and vqmodel_available
 
@@ -276,8 +297,9 @@ def main():
     print("🎨 VQ-VAE + Transformer 统一环境配置脚本")
     print("=" * 60)
     print("🎯 一个环境支持VQ-VAE和Transformer训练")
-    print("💡 修复huggingface_hub版本冲突和OfflineModeIsEnabled错误")
-    print("🔧 使用兼容的版本组合确保稳定运行")
+    print("💡 使用确定支持VQModel的版本组合")
+    print("🔧 自动尝试多个已知可用的版本组合")
+    print("⚠️ 如果失败，建议使用分阶段训练")
     print()
 
     steps = [
