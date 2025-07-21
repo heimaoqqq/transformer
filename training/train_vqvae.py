@@ -138,11 +138,14 @@ class VQVAETrainer:
     def train_epoch(self, dataloader, epoch):
         """训练一个epoch"""
         self.model.train()
-        
+
+        # 重置epoch级别的码本统计
+        self.model.reset_epoch_stats()
+
         total_loss = 0
         total_recon_loss = 0
         total_vq_loss = 0
-        
+
         pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{self.args.num_epochs}")
         
         for batch_idx, batch in enumerate(pbar):
@@ -337,9 +340,22 @@ class VQVAETrainer:
             if (epoch + 1) % self.args.codebook_monitor_interval == 0:
                 try:
                     stats = self.model.get_codebook_stats()
-                    print(f"  📊 码本使用率: {stats['usage_rate']:.3f} ({stats['active_codes']}/{stats['total_codes']})")
-                    print(f"  📈 使用熵: {stats['usage_entropy']:.3f}")
-                    print(f"  🔢 总更新次数: {self.model.quantize.total_updates.item()}")
+
+                    # 主要显示epoch级别统计
+                    print(f"  📊 Epoch码本使用率: {stats['epoch_usage_rate']:.3f} ({stats['epoch_active_codes']}/{stats['total_codes']})")
+                    print(f"  📈 Epoch使用熵: {stats['epoch_entropy']:.3f}")
+                    print(f"  📊 累积码本使用率: {stats['cumulative_usage_rate']:.3f} ({stats['cumulative_active_codes']}/{stats['total_codes']})")
+                    print(f"  🔢 总更新次数: {stats['total_updates']}")
+
+                    # 坍缩警告 (基于epoch使用率)
+                    epoch_rate = stats['epoch_usage_rate']
+                    if epoch_rate < 0.1:
+                        print(f"  🚨 严重警告: Epoch码本使用率过低，可能发生坍缩!")
+                    elif epoch_rate < 0.3:
+                        print(f"  ⚠️ 注意: Epoch码本使用率较低")
+                    else:
+                        print(f"  ✅ Epoch码本使用率正常")
+
                 except Exception as e:
                     print(f"  ❌ 码本统计获取失败: {e}")
                     # 调试信息
