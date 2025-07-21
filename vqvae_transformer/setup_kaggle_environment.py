@@ -145,14 +145,14 @@ def install_huggingface_stack():
     """安装HuggingFace技术栈"""
     print("\n🤗 安装HuggingFace技术栈...")
     
-    # 完全按照diffusers 0.24.0官方要求，但限制上限避免API变化
+    # 使用diffusers要求的最低版本，避免新版本API变化问题
     hf_packages = [
-        ("huggingface_hub>=0.19.4,<0.25.0", "HuggingFace Hub (diffusers要求，限制上限)"),
-        ("tokenizers>=0.11.1,!=0.11.3", "Tokenizers (diffusers要求)"),
-        ("safetensors>=0.3.1", "SafeTensors (diffusers要求)"),
-        ("transformers>=4.25.1", "Transformers (diffusers要求)"),
-        ("accelerate>=0.11.0", "Accelerate (diffusers要求)"),
-        ("diffusers==0.24.0", "Diffusers (保持目标版本)"),
+        ("huggingface_hub==0.19.4", "HuggingFace Hub (diffusers要求的最低版本，可能仍有cached_download)"),
+        ("tokenizers>=0.11.1,!=0.11.3", "Tokenizers (diffusers官方要求)"),
+        ("safetensors>=0.3.1", "SafeTensors (diffusers官方要求)"),
+        ("transformers>=4.25.1", "Transformers (diffusers官方要求)"),
+        ("accelerate>=0.11.0", "Accelerate (diffusers官方要求)"),
+        ("diffusers==0.24.0", "Diffusers (目标版本)"),
     ]
     
     success_count = 0
@@ -160,12 +160,6 @@ def install_huggingface_stack():
         # 使用--force-reinstall确保版本正确
         if run_command(f"pip install '{package}' --force-reinstall --no-cache-dir", f"安装 {description}"):
             success_count += 1
-        else:
-            # 如果是huggingface_hub失败，尝试特定版本
-            if "huggingface_hub" in package:
-                print("🔧 尝试安装兼容cached_download的特定版本...")
-                if run_command("pip install 'huggingface_hub==0.20.3' --force-reinstall --no-cache-dir", "安装 HuggingFace Hub 0.20.3"):
-                    success_count += 1
     
     print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(hf_packages)} 成功")
     return success_count >= len(hf_packages) - 1  # 允许1个失败
