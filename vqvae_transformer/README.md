@@ -124,16 +124,22 @@ python train_main.py --data_dir /path/to/data
 
 ## 🎮 使用示例
 
-### **生成图像**
+### **生成图像 (需要Transformer环境)**
 ```bash
+# 确保在Transformer环境中运行
+python setup_transformer_environment.py
+
 python generate_main.py \
     --model_dir "/kaggle/working/outputs/vqvae_transformer" \
     --output_dir "generated_images" \
     --samples_per_user 10
 ```
 
-### **验证质量**
+### **验证质量 (需要Transformer环境)**
 ```bash
+# 确保在Transformer环境中运行
+python setup_transformer_environment.py
+
 python validate_main.py \
     --model_dir "/kaggle/working/outputs/vqvae_transformer" \
     --real_data_dir "/kaggle/input/dataset" \
@@ -200,6 +206,40 @@ python setup_vqvae_environment.py    # VQ-VAE阶段
 # 重启后
 python setup_transformer_environment.py  # Transformer阶段
 ```
+
+## 📋 环境使用指南
+
+### **各脚本的环境要求**
+
+| 脚本 | VQ-VAE环境 | Transformer环境 | 说明 |
+|------|-----------|----------------|------|
+| `train_main.py --skip_transformer` | ✅ | ❌ | VQ-VAE训练 |
+| `training/train_vqvae.py` | ✅ | ❌ | VQ-VAE专用训练 |
+| `train_main.py --skip_vqvae` | ❌ | ✅ | Transformer训练 |
+| `training/train_transformer.py` | ❌ | ✅ | Transformer专用训练 |
+| `generate_main.py` | ❌ | ✅ | 图像生成 (需要两个模型) |
+| `validate_main.py` | ❌ | ✅ | 质量验证 (需要两个模型) |
+| `test_cross_environment_compatibility.py` | ✅ | ✅ | 兼容性测试 |
+
+### **推荐工作流程**
+
+1. **VQ-VAE阶段** (在VQ-VAE环境):
+   ```bash
+   python setup_vqvae_environment.py
+   python train_main.py --skip_transformer --data_dir /kaggle/input/dataset
+   ```
+
+2. **Transformer阶段** (在Transformer环境):
+   ```bash
+   python setup_transformer_environment.py
+   python train_main.py --skip_vqvae --data_dir /kaggle/input/dataset
+   ```
+
+3. **生成和验证** (在Transformer环境):
+   ```bash
+   python generate_main.py --model_dir ./outputs/vqvae_transformer
+   python validate_main.py --model_dir ./outputs/vqvae_transformer
+   ```
 
 ## 📊 核心技术
 

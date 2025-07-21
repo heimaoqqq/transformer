@@ -15,8 +15,28 @@ import matplotlib.pyplot as plt
 sys.path.append(str(Path(__file__).parent))
 sys.path.append(str(Path(__file__).parent.parent))
 
-from models.vqvae_model import MicroDopplerVQVAE
-from models.transformer_model import MicroDopplerTransformer
+# 条件导入模型 - 检查环境兼容性
+try:
+    from models.vqvae_model import MicroDopplerVQVAE
+    VQVAE_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ 无法导入VQ-VAE模型: {e}")
+    print("   请确保在正确的环境中运行验证脚本")
+    VQVAE_AVAILABLE = False
+
+try:
+    from models.transformer_model import MicroDopplerTransformer
+    TRANSFORMER_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ 无法导入Transformer模型: {e}")
+    print("   请确保在正确的环境中运行验证脚本")
+    TRANSFORMER_AVAILABLE = False
+
+# 检查必要组件
+if not (VQVAE_AVAILABLE and TRANSFORMER_AVAILABLE):
+    print("❌ 验证脚本需要同时支持VQ-VAE和Transformer")
+    print("   建议在Transformer环境中运行，因为它可以加载VQ-VAE模型")
+    sys.exit(1)
 
 # 尝试导入主项目的验证器
 try:

@@ -10,8 +10,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from typing import Optional, Tuple, Dict
-from transformers import GPT2Config, GPT2LMHeadModel
-from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
+
+# 条件导入transformers - 在VQ-VAE环境中可能不可用
+try:
+    from transformers import GPT2Config, GPT2LMHeadModel
+    from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    print("⚠️ transformers不可用，Transformer模型将不可用")
+    TRANSFORMERS_AVAILABLE = False
+    # 创建兼容的基类
+    class GPT2Config:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class GPT2LMHeadModel(nn.Module):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+
+    class CausalLMOutputWithCrossAttentions:
+        def __init__(self, *args, **kwargs):
+            pass
 
 class PositionalEncoding(nn.Module):
     """位置编码"""
