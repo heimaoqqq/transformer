@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 # 导入diffusers - 统一环境保证可用
 from diffusers.models.autoencoders.vq_model import VQModel
 from diffusers.models.autoencoders.vq_model import VectorQuantizer
-            super().__init__()
 
 class EMAVectorQuantizer(nn.Module):
     """
