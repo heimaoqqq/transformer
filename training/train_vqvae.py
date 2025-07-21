@@ -158,8 +158,8 @@ class VQVAETrainer:
             self.optimizer.zero_grad()
             
             outputs = self.model(images, return_dict=True)
-            reconstructed = outputs['sample']
-            vq_loss = outputs['vq_loss']
+            reconstructed = outputs.sample
+            vq_loss = outputs.vq_loss
             
             # 计算重建损失
             recon_loss = self.recon_criterion(reconstructed, images)
@@ -256,7 +256,7 @@ class VQVAETrainer:
                 images = images.to(self.device)
                 
                 outputs = self.model(images, return_dict=True)
-                reconstructed = outputs['sample']
+                reconstructed = outputs.sample
                 
                 # 反归一化到[0,1]
                 images_eval = (images * 0.5 + 0.5).clamp(0, 1)
