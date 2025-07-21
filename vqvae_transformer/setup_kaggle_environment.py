@@ -147,7 +147,7 @@ def install_huggingface_stack():
     
     # 完全按照diffusers 0.24.0官方要求，让pip自动解决依赖
     hf_packages = [
-        ("huggingface_hub>=0.19.4", "HuggingFace Hub (diffusers官方要求)"),
+        ("huggingface_hub>=0.19.4,<0.26.0", "HuggingFace Hub (保留cached_download的最后版本)"),
         ("tokenizers>=0.11.1,!=0.11.3", "Tokenizers (diffusers官方要求)"),
         ("safetensors>=0.3.1", "SafeTensors (diffusers官方要求)"),
         ("transformers>=4.25.1", "Transformers (diffusers官方要求)"),
