@@ -67,7 +67,7 @@ def setup_git_remote():
         pass
     
     # 添加远程仓库
-    remote_url = "git@github.com:heimaoqqq/VAE.git"
+    remote_url = "git@github.com:heimaoqqq/transformer.git"
     return run_git_command(f"git remote add origin {remote_url}", f"添加远程仓库 {remote_url}")
 
 def add_and_commit_files():
@@ -236,7 +236,7 @@ def main():
     """主函数"""
     print("🎨 上传VQ-VAE+Transformer项目到GitHub")
     print("=" * 60)
-    print("🎯 目标仓库: git@github.com:heimaoqqq/VAE.git")
+    print("🎯 目标仓库: git@github.com:heimaoqqq/transformer.git")
     
     # 检查当前目录
     current_dir = Path.cwd()
@@ -264,12 +264,12 @@ def main():
     print("\n🎉 项目上传成功！")
     print("✅ 所有文件已推送到GitHub")
     print("\n📋 下一步:")
-    print("   1. 访问: https://github.com/heimaoqqq/VAE")
+    print("   1. 访问: https://github.com/heimaoqqq/transformer")
     print("   2. 检查项目文件是否完整")
     print("   3. 查看README.md了解使用方法")
     print("\n🚀 开始使用:")
-    print("   git clone git@github.com:heimaoqqq/VAE.git")
-    print("   cd VAE/vqvae_transformer")
+    print("   git clone git@github.com:heimaoqqq/transformer.git")
+    print("   cd transformer")
     print("   python setup_unified_environment.py")
     
     return True
