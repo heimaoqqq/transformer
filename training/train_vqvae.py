@@ -335,9 +335,19 @@ class VQVAETrainer:
             
             # 显示码本使用情况
             if (epoch + 1) % self.args.codebook_monitor_interval == 0:
-                stats = self.model.get_codebook_stats()
-                print(f"  📊 码本使用率: {stats['usage_rate']:.3f} ({stats['active_codes']}/{stats['total_codes']})")
-                print(f"  📈 使用熵: {stats['usage_entropy']:.3f}")
+                try:
+                    stats = self.model.get_codebook_stats()
+                    print(f"  📊 码本使用率: {stats['usage_rate']:.3f} ({stats['active_codes']}/{stats['total_codes']})")
+                    print(f"  📈 使用熵: {stats['usage_entropy']:.3f}")
+                    print(f"  🔢 总更新次数: {self.model.quantize.total_updates.item()}")
+                except Exception as e:
+                    print(f"  ❌ 码本统计获取失败: {e}")
+                    # 调试信息
+                    print(f"  🔍 调试: 模型类型 = {type(self.model)}")
+                    print(f"  🔍 调试: 是否有quantize属性 = {hasattr(self.model, 'quantize')}")
+                    if hasattr(self.model, 'quantize'):
+                        print(f"  🔍 调试: quantize类型 = {type(self.model.quantize)}")
+                        print(f"  🔍 调试: 是否有usage_count = {hasattr(self.model.quantize, 'usage_count')}")
 
                 # 坍缩警告
                 if stats['usage_rate'] < 0.1:

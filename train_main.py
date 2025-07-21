@@ -77,7 +77,7 @@ def train_vqvae(args, config):
         "--num_workers", str(config["num_workers"]),
         "--sample_interval", "500",
         "--eval_interval", "5",
-        "--codebook_monitor_interval", "10",
+        "--codebook_monitor_interval", "1",
     ]
     
     print(f"🚀 启动VQ-VAE训练...")
