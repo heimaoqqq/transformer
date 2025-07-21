@@ -280,7 +280,12 @@ class VQVAETrainer:
         return {'psnr': avg_psnr, 'ssim': avg_ssim}
     
     def save_model(self, epoch, is_best=False):
-        """保存模型"""
+        """
+        保存模型，智能管理存储空间
+        - 只保留最近的N个checkpoint
+        - 保存最佳模型
+        - 定期保存里程碑模型
+        """
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
@@ -288,30 +293,102 @@ class VQVAETrainer:
             'scheduler_state_dict': self.scheduler.state_dict(),
             'args': self.args,
         }
-        
-        # 保存检查点
+
+        # 保存当前checkpoint
         checkpoint_path = self.output_dir / f"checkpoint_epoch_{epoch:03d}.pth"
         torch.save(checkpoint, checkpoint_path)
-        
+        print(f"💾 保存checkpoint: epoch_{epoch:03d}.pth")
+
         # 保存最佳模型
         if is_best:
             best_path = self.output_dir / "best_model.pth"
             torch.save(checkpoint, best_path)
-            print(f"💾 保存最佳模型: {best_path}")
-        
-        # 保存最终模型
-        final_path = self.output_dir / "final_model"
-        final_path.mkdir(exist_ok=True)
-        self.model.save_pretrained(final_path)
-        print(f"💾 保存模型: {final_path}")
+            print(f"🏆 保存最佳模型: {best_path} (PSNR提升)")
+
+        # 保存里程碑模型 (根据参数设置间隔或最后一个epoch)
+        is_milestone = (epoch + 1) % self.args.milestone_interval == 0 or epoch == self.args.num_epochs - 1
+        if is_milestone:
+            milestone_path = self.output_dir / f"milestone_epoch_{epoch:03d}.pth"
+            torch.save(checkpoint, milestone_path)
+            print(f"🎯 保存里程碑: milestone_epoch_{epoch:03d}.pth")
+
+        # 清理旧的checkpoint (如果启用自动清理)
+        if self.args.auto_cleanup:
+            self._cleanup_old_checkpoints(epoch)
+
+        # 只在最后保存final_model
+        if epoch == self.args.num_epochs - 1:
+            final_path = self.output_dir / "final_model"
+            final_path.mkdir(exist_ok=True)
+            self.model.save_pretrained(final_path)
+            print(f"🎉 保存最终模型: {final_path}")
+
+    def _cleanup_old_checkpoints(self, current_epoch):
+        """清理旧的checkpoint文件，节省存储空间"""
+        try:
+            # 获取所有checkpoint文件
+            checkpoint_files = list(self.output_dir.glob("checkpoint_epoch_*.pth"))
+
+            if len(checkpoint_files) <= self.args.keep_checkpoints:  # 如果文件数量少于等于设定值，不清理
+                return
+
+            # 按epoch排序
+            checkpoint_files.sort(key=lambda x: int(x.stem.split('_')[-1]))
+
+            # 保留最近N个checkpoint
+            keep_recent = self.args.keep_checkpoints
+            files_to_keep = set(checkpoint_files[-keep_recent:])
+
+            # 保留里程碑checkpoint (根据设定间隔)
+            for f in checkpoint_files:
+                epoch_num = int(f.stem.split('_')[-1])
+                if epoch_num % self.args.milestone_interval == 0:  # 里程碑
+                    files_to_keep.add(f)
+
+            # 删除不需要保留的文件
+            deleted_count = 0
+            for f in checkpoint_files:
+                if f not in files_to_keep:
+                    f.unlink()  # 删除文件
+                    deleted_count += 1
+
+            if deleted_count > 0:
+                print(f"🗑️ 清理了 {deleted_count} 个旧checkpoint，节省存储空间")
+
+        except Exception as e:
+            print(f"⚠️ 清理checkpoint时出错: {e}")
+
+    def get_storage_info(self):
+        """获取存储空间信息"""
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage(self.output_dir)
+
+            # 计算当前输出目录大小
+            output_size = sum(f.stat().st_size for f in self.output_dir.rglob('*') if f.is_file())
+
+            print(f"💾 存储信息:")
+            print(f"   输出目录大小: {output_size / (1024**3):.2f} GB")
+            print(f"   磁盘剩余空间: {free / (1024**3):.2f} GB")
+            print(f"   磁盘使用率: {used / total * 100:.1f}%")
+
+            # 警告存储空间不足
+            if free < 5 * (1024**3):  # 少于5GB
+                print(f"⚠️ 警告: 磁盘剩余空间不足5GB!")
+
+        except Exception as e:
+            print(f"⚠️ 获取存储信息失败: {e}")
     
     def train(self):
         """主训练循环"""
         print(f"\n🎯 开始VQ-VAE训练...")
-        
+
+        # 显示存储信息
+        self.get_storage_info()
+
         # 创建数据加载器
         dataloader = self._create_dataloader()
-        
+
         best_psnr = 0
         
         for epoch in range(self.args.num_epochs):
@@ -420,6 +497,11 @@ def main():
     parser.add_argument("--sample_interval", type=int, default=500, help="样本保存间隔")
     parser.add_argument("--eval_interval", type=int, default=5, help="评估间隔")
     parser.add_argument("--codebook_monitor_interval", type=int, default=1, help="码本监控间隔")
+
+    # 存储管理参数
+    parser.add_argument("--keep_checkpoints", type=int, default=5, help="保留最近N个checkpoint")
+    parser.add_argument("--milestone_interval", type=int, default=10, help="里程碑保存间隔")
+    parser.add_argument("--auto_cleanup", action="store_true", help="自动清理旧文件")
     
     args = parser.parse_args()
     

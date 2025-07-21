@@ -78,6 +78,9 @@ def train_vqvae(args, config):
         "--sample_interval", "500",
         "--eval_interval", "5",
         "--codebook_monitor_interval", "1",
+        "--keep_checkpoints", "3",  # 只保留最近3个checkpoint
+        "--milestone_interval", "10",  # 每10个epoch保存里程碑
+        "--auto_cleanup",  # 启用自动清理
     ]
     
     print(f"🚀 启动VQ-VAE训练...")
