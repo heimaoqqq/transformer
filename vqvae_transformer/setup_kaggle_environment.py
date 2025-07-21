@@ -114,22 +114,22 @@ def install_pytorch_gpu():
     """安装GPU版本PyTorch"""
     print("\n🔥 安装GPU版本PyTorch...")
     
-    # 针对Kaggle GPU环境的PyTorch安装策略 (修复NCCL兼容性问题)
+    # 借鉴ultimate_fix_kaggle.py的成功策略 - 使用与Kaggle兼容的新版PyTorch
     pytorch_options = [
-        # 方案1: 使用CPU版本避免CUDA兼容性问题
-        "pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cpu",
+        # 方案1: CUDA 12.1版本 (与Kaggle最新环境匹配)
+        "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121",
 
-        # 方案2: 较旧的稳定CUDA版本
-        "pip install torch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 --index-url https://download.pytorch.org/whl/cu116",
+        # 方案2: CUDA 11.8版本 (稳定版本)
+        "pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118",
 
-        # 方案3: 尝试预装版本但可能有NCCL问题
+        # 方案3: 使用Kaggle预装版本 (通常已优化)
         "pip install torch torchvision torchaudio --upgrade",
 
-        # 方案4: 其他CUDA版本
-        "pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --index-url https://download.pytorch.org/whl/cu117",
+        # 方案4: 默认最新版本
+        "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0",
 
-        # 方案5: 最新CPU版本作为最后备用
-        "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu",
+        # 方案5: CPU版本作为最后备用
+        "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cpu",
     ]
     
     for i, cmd in enumerate(pytorch_options, 1):
@@ -145,14 +145,14 @@ def install_huggingface_stack():
     """安装HuggingFace技术栈"""
     print("\n🤗 安装HuggingFace技术栈...")
     
-    # 使用兼容cached_download的版本范围 (解决API兼容性问题)
+    # 完全按照diffusers 0.24.0官方要求，但限制上限避免API变化
     hf_packages = [
-        ("huggingface_hub>=0.19.4,<0.25.0", "HuggingFace Hub (兼容cached_download)"),
-        ("tokenizers>=0.11.1,!=0.11.3,<0.15.0", "Tokenizers"),
-        ("safetensors>=0.3.1,<0.5.0", "SafeTensors"),
-        ("transformers>=4.25.1,<4.40.0", "Transformers"),
-        ("accelerate>=0.11.0,<0.30.0", "Accelerate"),
-        ("diffusers==0.24.0", "Diffusers (目标版本)"),
+        ("huggingface_hub>=0.19.4,<0.25.0", "HuggingFace Hub (diffusers要求，限制上限)"),
+        ("tokenizers>=0.11.1,!=0.11.3", "Tokenizers (diffusers要求)"),
+        ("safetensors>=0.3.1", "SafeTensors (diffusers要求)"),
+        ("transformers>=4.25.1", "Transformers (diffusers要求)"),
+        ("accelerate>=0.11.0", "Accelerate (diffusers要求)"),
+        ("diffusers==0.24.0", "Diffusers (保持目标版本)"),
     ]
     
     success_count = 0
@@ -280,7 +280,7 @@ def get_gpu_config():
             _ = test_tensor + 1  # 简单测试
 
             gpu_name = torch.cuda.get_device_name(0)
-            print(f"🎯 检测到可用GPU: {gpu_name}")
+            print(f"🚀 检测到可用GPU: {gpu_name}")
 
             # 根据GPU类型优化配置
             if "T4" in gpu_name:
@@ -296,6 +296,7 @@ def get_gpu_config():
                 config = {"device": "cuda", "batch_size": 16, "mixed_precision": True}
                 print("🎯 通用GPU配置：batch_size=16, 混合精度=True")
 
+            print("🚀 GPU训练模式：速度快，性能优")
             return config
 
         except Exception as e:
@@ -311,8 +312,9 @@ def main():
     """主函数"""
     print("🔧 Kaggle环境一键配置脚本")
     print("=" * 50)
-    print("🎯 智能环境配置 + 依赖安装 + 兼容性检查")
-    print("💡 优先使用CPU版本PyTorch避免CUDA兼容性问题")
+    print("🎯 GPU优化配置 + 依赖安装 + 兼容性检查")
+    print("💡 使用与Kaggle兼容的新版PyTorch解决CUDA问题")
+    print("📋 保持diffusers 0.24.0版本，按官方要求配置")
     
     # 执行配置流程
     steps = [
@@ -342,22 +344,29 @@ def main():
     
     print("\n🎉 Kaggle环境配置完成!")
     print("✅ 所有组件已安装并验证")
+    print("📋 diffusers 0.24.0 + 兼容PyTorch版本")
 
     if gpu_config['device'] == 'cpu':
-        print("💻 配置为CPU训练模式 (避免CUDA兼容性问题)")
-        print("⚡ CPU训练稳定可靠，适合Kaggle环境")
+        print("💻 配置为CPU训练模式 (GPU兼容性问题)")
+        print("⚡ CPU训练稳定可靠，功能完整")
     else:
         print("🚀 配置为GPU训练模式")
+        print("⚡ GPU训练速度快，性能优")
 
     print("\n🚀 现在可以开始训练:")
     print(f"   python train_main.py --data_dir /kaggle/input/dataset --device {gpu_config['device']}")
     print(f"   推荐batch_size: {gpu_config['batch_size']}")
 
-    if gpu_config['device'] == 'cpu':
-        print("\n💡 CPU训练优势:")
-        print("   - 避免CUDA兼容性问题")
-        print("   - 稳定可靠，不会出现NCCL错误")
-        print("   - 内存使用更可控")
+    if gpu_config['device'] == 'cuda':
+        print("\n💡 GPU训练优势:")
+        print("   - 训练速度快5-10倍")
+        print("   - 支持更大的batch size")
+        print("   - 支持混合精度训练")
+    else:
+        print("\n💡 CPU训练说明:")
+        print("   - 功能完整，稳定可靠")
+        print("   - 适合小规模实验")
+        print("   - 如需GPU，请检查CUDA兼容性")
     
     return True
 
