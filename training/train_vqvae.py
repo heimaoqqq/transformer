@@ -36,10 +36,11 @@ class VQVAETrainer:
         self.output_dir = Path(args.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 设置数据变换
+        # 设置数据变换 (256x256 -> 128x128)
         self.transform = transforms.Compose([
-            transforms.Resize((args.resolution, args.resolution)),
-            transforms.ToTensor(),
+            transforms.Resize((args.resolution, args.resolution),
+                            interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.ToTensor(),  # [0, 1]
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # [-1, 1]
         ])
         

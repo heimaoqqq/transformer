@@ -150,7 +150,7 @@ def main():
     
     # 数据参数
     parser.add_argument("--data_dir", type=str, default="/kaggle/input/dataset",
-                       help="数据集目录")
+                       help="数据集目录 (包含ID1, ID_2, ..., ID_31目录)")
     parser.add_argument("--output_dir", type=str, default="/kaggle/working/outputs/vqvae_transformer",
                        help="输出目录")
     parser.add_argument("--resolution", type=int, default=128,
