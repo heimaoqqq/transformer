@@ -103,9 +103,18 @@ def train_transformer(args, config):
     transformer_output = Path(args.output_dir) / "transformer"
     
     # 检查VQ-VAE是否存在
-    if not (vqvae_path / "final_model").exists() and not (vqvae_path / "best_model.pth").exists():
+    final_model_exists = (vqvae_path / "final_model").exists()
+    checkpoint_exists = (vqvae_path / "best_model.pth").exists() or len(list(vqvae_path.glob("*.pth"))) > 0
+
+    if not final_model_exists and not checkpoint_exists:
         print(f"❌ 未找到VQ-VAE模型: {vqvae_path}")
+        print(f"   期望文件: final_model/ 或 *.pth")
         return False
+
+    if final_model_exists:
+        print(f"✅ 找到VQ-VAE模型 (diffusers格式): {vqvae_path}/final_model")
+    else:
+        print(f"✅ 找到VQ-VAE模型 (checkpoint格式): {vqvae_path}/*.pth")
     
     cmd = [
         "python", "training/train_transformer.py",
