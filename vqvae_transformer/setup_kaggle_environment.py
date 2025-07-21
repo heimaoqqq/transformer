@@ -160,6 +160,12 @@ def install_huggingface_stack():
         # 使用--force-reinstall确保版本正确
         if run_command(f"pip install '{package}' --force-reinstall --no-cache-dir", f"安装 {description}"):
             success_count += 1
+        else:
+            # 如果是huggingface_hub失败，尝试特定版本
+            if "huggingface_hub" in package:
+                print("🔧 尝试安装兼容cached_download的特定版本...")
+                if run_command("pip install 'huggingface_hub==0.20.3' --force-reinstall --no-cache-dir", "安装 HuggingFace Hub 0.20.3"):
+                    success_count += 1
     
     print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(hf_packages)} 成功")
     return success_count >= len(hf_packages) - 1  # 允许1个失败
@@ -246,18 +252,18 @@ def test_installation():
     except Exception as e:
         print(f"❌ hf_hub_download: 不可用 - {e}")
     
-    # 测试VQModel
+    # 测试VQModel (按diffusers 0.24.0的正确导入顺序)
     try:
-        from diffusers.models.autoencoders.vq_model import VQModel
-        print("✅ VQModel: 可用 (新版API)")
+        from diffusers import VQModel
+        print("✅ VQModel: 可用 (diffusers 0.24.0标准导入)")
     except ImportError:
         try:
-            from diffusers.models.vq_model import VQModel
-            print("✅ VQModel: 可用 (旧版API)")
+            from diffusers.models.autoencoders.vq_model import VQModel
+            print("✅ VQModel: 可用 (autoencoders路径)")
         except ImportError:
             try:
-                from diffusers import VQModel
-                print("✅ VQModel: 可用 (直接导入)")
+                from diffusers.models.vq_model import VQModel
+                print("✅ VQModel: 可用 (旧版API路径)")
             except ImportError:
                 print("❌ VQModel: 所有导入路径都失败")
     
