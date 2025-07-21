@@ -47,8 +47,8 @@ vqvae_transformer/
 ```bash
 cd vqvae_transformer
 
-# 统一环境安装脚本 - 使用经过验证的固定版本组合
-python setup_environment.py
+# Kaggle环境一键配置：GPU优化 + 依赖安装 + 兼容性检查
+python setup_kaggle_environment.py
 
 # 验证环境是否正确
 python check_environment.py
@@ -58,9 +58,9 @@ python check_environment.py
 ```bash
 cd vqvae_transformer
 
-# 安装diffusers 0.24.0官方要求的版本组合
+# 安装Kaggle GPU优化的版本组合
 pip install numpy==1.26.4
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --index-url https://download.pytorch.org/whl/cu116
 pip install "huggingface_hub>=0.19.4"
 pip install "transformers>=4.25.1"
 pip install "diffusers==0.24.0"
@@ -170,78 +170,48 @@ python training/train_transformer.py \
 ## 🔍 故障排除
 
 ### 环境问题
-1. **PyTorch依赖冲突** (常见):
+1. **环境配置失败**:
    ```bash
-   # 如果遇到PyTorch版本冲突错误
-   python check_pytorch_compatibility.py --fix
+   # 重新运行一键配置脚本
+   python setup_kaggle_environment.py
 
-   # 或手动修复
-   pip uninstall torch torchvision torchaudio -y
-   pip install torch==2.0.1 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
+   # 或手动清理后重装
+   pip uninstall torch transformers diffusers -y
+   pip cache purge
+   python setup_kaggle_environment.py
    ```
 
-2. **numpy/JAX兼容性问题**:
+2. **GPU兼容性问题**:
    ```bash
-   # 如果遇到 "module 'numpy' has no attribute 'dtypes'" 错误
-   pip install numpy==1.26.4
-   python setup_environment.py
+   # 如果遇到CUDA错误，脚本会自动尝试多种PyTorch版本
+   # 包括CPU版本作为备用
+   python setup_kaggle_environment.py
    ```
 
-2. **VQModel导入失败**:
+3. **导入错误**:
    ```bash
-   # 如果遇到 "No module named 'diffusers.models.autoencoders'" 错误
-   pip install diffusers==0.24.0 --force-reinstall
-   python setup_environment.py
+   # 如果遇到模块导入错误
+   python check_environment.py  # 检查具体问题
+   python setup_kaggle_environment.py  # 重新配置
    ```
 
-3. **cached_download不可用**:
-   ```bash
-   # 如果遇到 "cannot import name 'cached_download'" 错误
-
-   # 方法1: 使用诊断工具
-   python diagnose_api.py --fix
-
-   # 方法2: 手动修复
-   pip install huggingface_hub==0.17.3 --force-reinstall --no-cache-dir
-   python setup_environment.py
-   ```
-
-4. **版本冲突**:
-   ```bash
-   # 检查版本
-   python check_environment.py
-
-   # 使用经过验证的固定版本组合
-   python setup_environment.py
-   ```
-
-### 诊断工具
+### 推荐版本组合
 ```bash
-# API兼容性诊断工具
-python diagnose_api.py           # 诊断API问题
-python diagnose_api.py --fix     # 自动修复API问题
-```
-
-### PyTorch兼容性检查
-```bash
-# PyTorch版本兼容性检查工具
-python check_pytorch_compatibility.py           # 检查当前PyTorch状态
-python check_pytorch_compatibility.py --fix     # 自动修复PyTorch问题
-```
-
-### diffusers 0.24.0官方要求的版本
-```bash
-# 基于diffusers官方setup.py的要求
-numpy>=1.24.0              # 基础数值计算
-torch>=1.4                 # PyTorch (diffusers要求>=1.4，推荐最新稳定版)
-huggingface_hub>=0.19.4    # diffusers官方要求 (注意：可能没有cached_download)
+# setup_kaggle_environment.py 使用的优化版本组合
+numpy==1.26.4              # 兼容JAX
+torch==1.13.1              # 与Kaggle CUDA兼容的稳定版本
+torchvision==0.14.1        # 对应torch 1.13.1
+torchaudio==0.13.1         # 对应torch 1.13.1
+huggingface_hub>=0.19.4    # diffusers官方要求
 transformers>=4.25.1       # diffusers官方要求
 accelerate>=0.11.0         # diffusers官方要求
 safetensors>=0.3.1         # diffusers官方要求
 diffusers==0.24.0          # 目标版本
 
-# 注意：新版本huggingface_hub可能没有cached_download API
-# 需要使用 hf_hub_download 替代 cached_download
+# 自动GPU配置:
+# - Tesla T4: batch_size=16, 混合精度=True
+# - Tesla P100: batch_size=12, 混合精度=False
+# - Tesla V100: batch_size=32, 混合精度=True
 ```
 
 3. **CUDA问题**:
