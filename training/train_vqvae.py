@@ -279,10 +279,10 @@ class VQVAETrainer:
         
         return {'psnr': avg_psnr, 'ssim': avg_ssim}
     
-    def save_model(self, epoch, is_best=False):
+    def save_model(self, epoch, is_best=False, save_checkpoint=True):
         """
         保存模型，智能管理存储空间
-        - 只保留最近的N个checkpoint
+        - 只在评估时保存checkpoint
         - 保存最佳模型
         - 定期保存里程碑模型
         """
@@ -294,10 +294,17 @@ class VQVAETrainer:
             'args': self.args,
         }
 
-        # 保存当前checkpoint
-        checkpoint_path = self.output_dir / f"checkpoint_epoch_{epoch:03d}.pth"
-        torch.save(checkpoint, checkpoint_path)
-        print(f"💾 保存checkpoint: epoch_{epoch:03d}.pth")
+        # 只在评估时或里程碑时保存checkpoint
+        is_milestone = (epoch + 1) % self.args.milestone_interval == 0 or epoch == self.args.num_epochs - 1
+
+        if save_checkpoint or is_milestone:
+            checkpoint_path = self.output_dir / f"checkpoint_epoch_{epoch:03d}.pth"
+            torch.save(checkpoint, checkpoint_path)
+            print(f"💾 保存checkpoint: epoch_{epoch:03d}.pth")
+
+            # 清理旧的checkpoint (如果启用自动清理)
+            if self.args.auto_cleanup:
+                self._cleanup_old_checkpoints(epoch)
 
         # 保存最佳模型
         if is_best:
@@ -305,16 +312,11 @@ class VQVAETrainer:
             torch.save(checkpoint, best_path)
             print(f"🏆 保存最佳模型: {best_path} (PSNR提升)")
 
-        # 保存里程碑模型 (根据参数设置间隔或最后一个epoch)
-        is_milestone = (epoch + 1) % self.args.milestone_interval == 0 or epoch == self.args.num_epochs - 1
-        if is_milestone:
+        # 保存里程碑模型 (单独保存，不与checkpoint重复)
+        if is_milestone and not save_checkpoint:
             milestone_path = self.output_dir / f"milestone_epoch_{epoch:03d}.pth"
             torch.save(checkpoint, milestone_path)
             print(f"🎯 保存里程碑: milestone_epoch_{epoch:03d}.pth")
-
-        # 清理旧的checkpoint (如果启用自动清理)
-        if self.args.auto_cleanup:
-            self._cleanup_old_checkpoints(epoch)
 
         # 只在最后保存final_model
         if epoch == self.args.num_epochs - 1:
@@ -405,13 +407,19 @@ class VQVAETrainer:
                 eval_metrics = self.evaluate(dataloader)
                 print(f"  PSNR: {eval_metrics['psnr']:.2f} dB")
                 print(f"  SSIM: {eval_metrics['ssim']:.4f}")
-                
+
                 # 保存最佳模型
                 is_best = eval_metrics['psnr'] > best_psnr
                 if is_best:
                     best_psnr = eval_metrics['psnr']
-                
-                self.save_model(epoch, is_best)
+
+                # 在评估时保存checkpoint和最佳模型
+                self.save_model(epoch, is_best, save_checkpoint=True)
+            else:
+                # 非评估epoch，检查是否需要保存里程碑
+                is_milestone = (epoch + 1) % self.args.milestone_interval == 0
+                if is_milestone:
+                    self.save_model(epoch, is_best=False, save_checkpoint=False)
             
             # 显示码本使用情况
             if (epoch + 1) % self.args.codebook_monitor_interval == 0:
