@@ -192,19 +192,44 @@ def create_balanced_dataset(
         max_samples_per_user=samples_per_user,
     )
 
-def get_default_transform(resolution: int = 128, normalize: bool = True) -> transforms.Compose:
+def get_default_transform(
+    resolution: int = 128,
+    normalize: bool = True,
+    interpolation: str = "lanczos"
+) -> transforms.Compose:
     """
     获取默认的图像变换
     Args:
         resolution: 目标分辨率 (从256x256缩放到指定尺寸)
         normalize: 是否归一化到[-1, 1]
+        interpolation: 插值方法 ("lanczos", "bicubic", "bilinear", "antialias")
     Returns:
         transform: 图像变换
     """
-    transform_list = [
-        transforms.Resize((resolution, resolution), interpolation=transforms.InterpolationMode.BILINEAR),
-        transforms.ToTensor(),  # [0, 1]
-    ]
+    # 选择插值方法
+    interpolation_map = {
+        "lanczos": transforms.InterpolationMode.LANCZOS,
+        "bicubic": transforms.InterpolationMode.BICUBIC,
+        "bilinear": transforms.InterpolationMode.BILINEAR,
+        "antialias": transforms.InterpolationMode.BILINEAR,  # 配合antialias=True
+    }
+
+    interp_mode = interpolation_map.get(interpolation, transforms.InterpolationMode.LANCZOS)
+
+    # 构建变换列表
+    if interpolation == "antialias":
+        # 使用抗锯齿缩放 (PyTorch 1.11+)
+        transform_list = [
+            transforms.Resize((resolution, resolution),
+                            interpolation=interp_mode,
+                            antialias=True),
+            transforms.ToTensor(),  # [0, 1]
+        ]
+    else:
+        transform_list = [
+            transforms.Resize((resolution, resolution), interpolation=interp_mode),
+            transforms.ToTensor(),  # [0, 1]
+        ]
 
     if normalize:
         # 归一化到[-1, 1]，适配VQ-VAE训练

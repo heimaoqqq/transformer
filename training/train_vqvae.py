@@ -36,13 +36,33 @@ class VQVAETrainer:
         self.output_dir = Path(args.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 设置数据变换 (256x256 -> 128x128)
+        # 设置数据变换 (256x256 -> 128x128) - 使用高质量缩放
+        interpolation_method = getattr(args, 'interpolation', 'lanczos')
+
+        if interpolation_method == 'antialias':
+            # 抗锯齿缩放 (推荐用于深度学习)
+            resize_transform = transforms.Resize(
+                (args.resolution, args.resolution),
+                interpolation=transforms.InterpolationMode.BILINEAR,
+                antialias=True
+            )
+        else:
+            # 传统插值方法
+            interp_map = {
+                'lanczos': transforms.InterpolationMode.LANCZOS,
+                'bicubic': transforms.InterpolationMode.BICUBIC,
+                'bilinear': transforms.InterpolationMode.BILINEAR,
+            }
+            interp_mode = interp_map.get(interpolation_method, transforms.InterpolationMode.LANCZOS)
+            resize_transform = transforms.Resize((args.resolution, args.resolution), interpolation=interp_mode)
+
         self.transform = transforms.Compose([
-            transforms.Resize((args.resolution, args.resolution),
-                            interpolation=transforms.InterpolationMode.BILINEAR),
+            resize_transform,
             transforms.ToTensor(),  # [0, 1]
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # [-1, 1]
         ])
+
+        print(f"🖼️ 图像缩放: 256x256 -> {args.resolution}x{args.resolution} ({interpolation_method})")
         
         # 初始化模型
         self.model = self._create_model()
@@ -334,6 +354,9 @@ def main():
     parser.add_argument("--data_dir", type=str, required=True, help="数据集目录")
     parser.add_argument("--output_dir", type=str, default="outputs/vqvae", help="输出目录")
     parser.add_argument("--resolution", type=int, default=128, help="图像分辨率")
+    parser.add_argument("--interpolation", type=str, default="lanczos",
+                       choices=["lanczos", "bicubic", "bilinear", "antialias"],
+                       help="图像缩放插值方法")
     
     # 模型参数
     parser.add_argument("--codebook_size", type=int, default=1024, help="码本大小")
