@@ -163,6 +163,18 @@ def install_huggingface_stack():
     
     print(f"\n📊 HuggingFace包安装结果: {success_count}/{len(hf_packages)} 成功")
 
+    # 强制安装兼容cached_download的huggingface_hub版本
+    print("\n🔧 强制安装兼容版本的huggingface_hub...")
+    compatible_versions = ["0.25.2", "0.24.5", "0.23.4"]
+
+    for version in compatible_versions:
+        print(f"🔄 尝试安装 huggingface_hub=={version}")
+        if run_command(f"pip install 'huggingface_hub=={version}' --force-reinstall --no-deps", f"强制安装 huggingface_hub {version}"):
+            print(f"✅ huggingface_hub {version} 安装成功")
+            break
+    else:
+        print("⚠️ 所有兼容版本都安装失败")
+
     # 如果有包安装失败，单独重试
     if success_count < len(hf_packages):
         print("\n🔧 重试失败的包...")
