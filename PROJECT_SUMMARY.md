@@ -11,7 +11,7 @@
 git clone git@github.com:heimaoqqq/transformer.git
 cd transformer
 
-# 2. 配置环境
+# 2. 配置环境 (自动修复版本冲突)
 python setup_unified_environment.py
 
 # 3. 验证环境安装
@@ -113,7 +113,7 @@ python train_main.py --skip_vqvae --data_dir /path/to/dataset
 
 ### 使用方法
 ```bash
-# 1. 先配置环境
+# 1. 配置环境 (自动修复版本冲突)
 python setup_unified_environment.py
 
 # 2. 运行完整API兼容性检查

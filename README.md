@@ -47,11 +47,8 @@ vqvae_transformer/
 #### **统一环境训练**
 
 ```bash
-# 1. 配置统一环境
+# 1. 配置统一环境 (自动修复版本冲突)
 python setup_unified_environment.py
-
-# 如果遇到依赖冲突，运行修复脚本
-python fix_dependency_conflicts.py
 
 # 2. 验证环境安装
 python test_unified_environment.py
@@ -387,14 +384,13 @@ diffusers==0.24.0          # 目标版本
 
 ### 依赖冲突解决
 ```bash
-# 常见问题1: NumPy版本冲突
-# 错误: "NumPy 1.x cannot be run in NumPy 2.x"
-python fix_dependency_conflicts.py
+# 常见问题1: OfflineModeIsEnabled导入错误
+# 错误: "cannot import name 'OfflineModeIsEnabled' from 'huggingface_hub.utils'"
+# 解决: setup_unified_environment.py 已自动修复此问题
 
-# 常见问题2: torchao依赖缺失
-# 错误: "No module named 'torch.sparse._triton_ops_meta'"
-pip uninstall torchao -y
-python setup_unified_environment.py
+# 常见问题2: NumPy版本冲突
+# 错误: "NumPy 1.x cannot be run in NumPy 2.x"
+# 解决: 自动降级到NumPy 1.x版本
 
 # 常见问题3: VQModel导入失败
 # 使用分阶段训练作为备选

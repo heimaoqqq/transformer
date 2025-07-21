@@ -93,12 +93,12 @@ def test_vqmodel_import():
         return False
 
 def install_core_dependencies():
-    """安装核心依赖 - 修复版本冲突"""
+    """安装核心依赖 - 修复huggingface_hub版本冲突"""
     print("🎨 安装核心依赖...")
-    print("💡 修复NumPy和依赖版本冲突")
+    print("💡 修复huggingface_hub版本冲突和OfflineModeIsEnabled错误")
 
     # 先卸载可能冲突的包
-    run_command("pip uninstall -y huggingface_hub diffusers transformers torchao", "清理可能冲突的包")
+    run_command("pip uninstall -y huggingface_hub diffusers transformers accelerate torchao", "清理可能冲突的包")
     run_command("pip cache purge", "清理pip缓存")
 
     # 第一步：修复NumPy版本冲突
@@ -106,46 +106,62 @@ def install_core_dependencies():
     if not run_command("pip install 'numpy<2.0' --force-reinstall", "降级NumPy到1.x版本"):
         return False
 
-    # 第二步：安装兼容的diffusers版本
-    print("\n🔧 安装兼容的diffusers版本...")
-    # 使用已知稳定的版本组合
-    if not run_command("pip install 'diffusers==0.29.2'", "安装 diffusers 0.29.2 (稳定版本)"):
+    # 第二步：安装兼容的huggingface_hub版本（关键修复）
+    print("\n🔧 安装兼容的huggingface_hub版本...")
+    if not run_command("pip install 'huggingface_hub==0.20.3'", "安装 huggingface_hub 0.20.3 (修复OfflineModeIsEnabled)"):
         return False
 
     # 第三步：安装兼容的transformers版本
-    if not run_command("pip install 'transformers==4.44.2'", "安装 transformers 4.44.2 (兼容版本)"):
+    print("\n🔧 安装兼容的transformers版本...")
+    if not run_command("pip install 'transformers==4.36.2'", "安装 transformers 4.36.2 (兼容版本)"):
         return False
 
-    # 第四步：测试VQModel是否可用
+    # 第四步：安装兼容的diffusers版本
+    print("\n🔧 安装兼容的diffusers版本...")
+    if not run_command("pip install 'diffusers==0.25.1'", "安装 diffusers 0.25.1 (稳定版本)"):
+        return False
+
+    # 第五步：安装accelerate
+    print("\n🔧 安装accelerate...")
+    if not run_command("pip install 'accelerate==0.25.0'", "安装 accelerate 0.25.0"):
+        return False
+
+    # 第六步：测试VQModel是否可用
     print("\n🧪 测试VQModel可用性...")
     vqmodel_available = test_vqmodel_import()
 
     if not vqmodel_available:
         print("\n⚠️ 尝试更早的稳定版本...")
-        # 尝试更早的版本
-        if not run_command("pip install 'diffusers==0.28.2' --force-reinstall", "降级到 diffusers 0.28.2"):
-            return False
+        # 尝试更早的版本组合
+        stable_versions = [
+            ("diffusers==0.24.0", "transformers==4.35.2", "huggingface_hub==0.19.4"),
+            ("diffusers==0.23.1", "transformers==4.34.1", "huggingface_hub==0.18.0"),
+        ]
 
-        # 重新测试
-        vqmodel_available = test_vqmodel_import()
+        for diffusers_ver, transformers_ver, hub_ver in stable_versions:
+            print(f"\n尝试版本组合: {diffusers_ver}, {transformers_ver}, {hub_ver}")
+            if (run_command(f"pip install {hub_ver} --force-reinstall", f"安装 {hub_ver}") and
+                run_command(f"pip install {transformers_ver} --force-reinstall", f"安装 {transformers_ver}") and
+                run_command(f"pip install {diffusers_ver} --force-reinstall", f"安装 {diffusers_ver}")):
+
+                if test_vqmodel_import():
+                    print("✅ 稳定版本组合VQModel可用")
+                    vqmodel_available = True
+                    break
+
         if not vqmodel_available:
-            print("❌ VQModel仍不可用，尝试手动修复...")
-            # 尝试手动修复导入问题
-            return try_manual_fix()
-        else:
-            print("✅ 早期版本VQModel可用")
+            print("❌ 所有版本组合都失败")
+            return False
     else:
         print("✅ VQModel可用")
 
-    # 第五步：安装其他核心依赖（指定兼容版本）
+    # 第七步：安装其他核心依赖
     core_packages = [
         ("safetensors==0.4.1", "SafeTensors"),
-        ("accelerate==0.24.1", "Accelerate"),
         ("tokenizers==0.15.0", "Tokenizers"),
-        ("huggingface_hub==0.19.4", "HuggingFace Hub"),
     ]
 
-    success_count = 2  # diffusers和transformers已成功
+    success_count = 4  # huggingface_hub, transformers, diffusers, accelerate已成功
     for package, description in core_packages:
         if run_command(f"pip install {package}", f"安装 {description}"):
             success_count += 1
@@ -154,31 +170,11 @@ def install_core_dependencies():
     print("\n🔧 验证版本兼容性...")
     run_command("pip check", "检查依赖冲突")
 
-    total_packages = 2 + len(core_packages)
+    total_packages = 4 + len(core_packages)
     print(f"\n📊 核心依赖安装结果: {success_count}/{total_packages} 成功")
-    return success_count >= total_packages - 2 and vqmodel_available  # 允许2个失败
+    return success_count >= total_packages - 1 and vqmodel_available
 
-def try_manual_fix():
-    """尝试手动修复导入问题"""
-    print("🔧 尝试手动修复导入问题...")
 
-    # 尝试最小化安装
-    minimal_packages = [
-        ("diffusers==0.27.2", "Diffusers 最小版本"),
-        ("transformers==4.40.2", "Transformers 最小版本"),
-    ]
-
-    for package, description in minimal_packages:
-        if not run_command(f"pip install {package} --force-reinstall --no-deps", f"最小安装 {description}"):
-            continue
-
-        # 测试是否可用
-        if test_vqmodel_import():
-            print(f"✅ {description} 修复成功")
-            return True
-
-    print("❌ 手动修复失败")
-    return False
 
 def install_additional_dependencies():
     """安装额外依赖 - 兼容版本"""
@@ -189,36 +185,31 @@ def install_additional_dependencies():
 
     additional_packages = [
         # 数据处理 (兼容NumPy 1.x的版本)
-        "pillow==10.0.1",
-        "opencv-python==4.8.1.78",
-        "matplotlib==3.7.2",
-        "scikit-image==0.21.0",
+        "pillow>=9.0.0",
+        "opencv-python>=4.8.0",
+        "matplotlib>=3.7.0",
+        "scikit-image>=0.20.0",
 
         # 机器学习工具
-        "scikit-learn==1.3.0",
-        "einops==0.7.0",
-        "tqdm==4.66.1",
+        "scikit-learn>=1.3.0",
+        "einops>=0.6.0",
+        "tqdm>=4.65.0",
 
         # 其他工具
-        "scipy==1.11.4",
+        "scipy>=1.10.0",
     ]
 
     success_count = 0
     for package in additional_packages:
-        if run_command(f"pip install {package}", f"安装 {package}"):
+        if run_command(f"pip install '{package}'", f"安装 {package}"):
             success_count += 1
-        else:
-            # 如果指定版本失败，尝试不指定版本
-            package_name = package.split("==")[0]
-            if run_command(f"pip install {package_name}", f"安装 {package_name} (最新兼容版本)"):
-                success_count += 1
 
-    # 特殊处理lpips (可能有依赖问题)
+    # 特殊处理lpips (可选依赖)
     print("\n🎨 安装感知损失库...")
-    if not run_command("pip install lpips==0.1.4", "安装 lpips"):
-        print("⚠️ lpips安装失败，跳过 (可选依赖)")
-    else:
+    if run_command("pip install lpips", "安装 lpips (可选)"):
         success_count += 1
+    else:
+        print("⚠️ lpips安装失败，跳过 (可选依赖)")
 
     print(f"\n📊 额外依赖安装结果: {success_count}/{len(additional_packages)+1} 成功")
     return success_count >= len(additional_packages) - 2  # 允许2个失败
@@ -285,10 +276,8 @@ def main():
     print("🎨 VQ-VAE + Transformer 统一环境配置脚本")
     print("=" * 60)
     print("🎯 一个环境支持VQ-VAE和Transformer训练")
-    print("💡 修复版本冲突，确保稳定运行")
-
-    print("\n⚠️ 如果遇到依赖冲突，可以先运行:")
-    print("   python fix_dependency_conflicts.py")
+    print("💡 修复huggingface_hub版本冲突和OfflineModeIsEnabled错误")
+    print("🔧 使用兼容的版本组合确保稳定运行")
     print()
 
     steps = [
