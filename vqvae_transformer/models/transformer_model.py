@@ -215,11 +215,15 @@ class MicroDopplerTransformer(nn.Module):
 
             # 用户特征放大器 - 增强用户信号强度
             self.user_amplifier = nn.Sequential(
-                nn.Linear(n_embd, n_embd),
+                nn.Linear(n_embd, n_embd * 2),
                 nn.GELU(),
-                nn.Linear(n_embd, n_embd),
-                nn.Tanh(),  # 限制输出范围，避免梯度爆炸
+                nn.Dropout(dropout),
+                nn.Linear(n_embd * 2, n_embd),
+                nn.GELU(),  # 移除Tanh限制，允许更大的特征差异
             )
+
+            # 用户特征缩放因子 - 动态调整用户影响强度
+            self.user_scale_factor = nn.Parameter(torch.tensor(2.0))  # 可学习的缩放因子
         
         print(f"🤖 微多普勒Transformer初始化:")
         print(f"   模型类型: 自定义GPT2 (专为视觉token优化)")
@@ -357,8 +361,11 @@ class MicroDopplerTransformer(nn.Module):
             # 应用用户特征放大器
             amplified_user_embeds = self.user_amplifier(projected_user_embeds)  # [B, n_embd]
 
+            # 应用可学习的缩放因子增强用户特征
+            scaled_user_embeds = amplified_user_embeds * self.user_scale_factor
+
             # 扩展用户特征为多个token以增强表达能力
-            expanded_user_features = self.user_expand(amplified_user_embeds)  # [B, n_embd * 8]
+            expanded_user_features = self.user_expand(scaled_user_embeds)  # [B, n_embd * 8]
             expanded_user_features = expanded_user_features.view(
                 batch_size, self.user_expansion_factor, self.n_embd
             )  # [B, 8, n_embd]
