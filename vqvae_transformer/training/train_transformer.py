@@ -603,6 +603,8 @@ class TransformerTrainer:
                     best_psnr = eval_metrics['psnr']
                     self._save_best_model(epoch, eval_metrics['psnr'], eval_metrics['loss'])
 
+
+
                 print()  # 空行分隔
 
             # 保存基于训练损失的最佳模型（备用）
@@ -749,12 +751,22 @@ class TransformerTrainer:
                     next_token_logits = outputs.logits[:, -1, :] / self.args.generation_temperature
 
                     # 限制logits到有效的token范围 [0, codebook_size-1]
-                    # 将超出范围的logits设为很小的值
                     if next_token_logits.shape[-1] > self.args.codebook_size:
                         next_token_logits = next_token_logits[:, :self.args.codebook_size]
 
-                    # 采样下一个token
-                    next_token = torch.multinomial(torch.softmax(next_token_logits, dim=-1), 1)
+                    # 添加噪声防止模式崩溃
+                    if step < 10:  # 前10步添加更多随机性
+                        noise = torch.randn_like(next_token_logits) * 0.1
+                        next_token_logits = next_token_logits + noise
+
+                    # 使用top-k采样增加多样性
+                    k = min(50, next_token_logits.shape[-1])  # top-50
+                    top_k_logits, top_k_indices = torch.topk(next_token_logits, k, dim=-1)
+
+                    # 在top-k中采样
+                    probs = torch.softmax(top_k_logits, dim=-1)
+                    sampled_indices = torch.multinomial(probs, 1)
+                    next_token = torch.gather(top_k_indices, -1, sampled_indices)
 
                     # 确保token在有效范围内
                     next_token = torch.clamp(next_token, 0, self.args.codebook_size - 1)
@@ -830,8 +842,8 @@ class TransformerTrainer:
                 # 转换为VQ-VAE期望的格式: [B, D, H, W]
                 embeddings = embeddings.permute(0, 3, 1, 2)  # [B, 256, 32, 32]
 
-                # 使用VQ-VAE解码
-                decoded_images = self.vqvae_model.decode(embeddings)
+                # 使用VQ-VAE解码 - 跳过重新量化！
+                decoded_images = self.vqvae_model.decode(embeddings, force_not_quantize=True)
 
                 return decoded_images
 
@@ -974,6 +986,34 @@ class TransformerTrainer:
         best_model_path = self.output_dir / f"best_model_epoch_{epoch+1:03d}_psnr_{psnr:.2f}.pth"
         torch.save(model_data, best_model_path)
         print(f"🏆 保存最佳模型: {best_model_path.name} (PSNR: {psnr:.2f} dB)")
+
+    def _save_checkpoint_to_kaggle(self, epoch, loss):
+        """保存checkpoint到Kaggle工作目录"""
+        try:
+            kaggle_output_dir = Path("/kaggle/working")
+            if kaggle_output_dir.exists():
+                checkpoint_data = {
+                    'epoch': epoch,
+                    'model_state_dict': self.transformer_model.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'scheduler_state_dict': self.scheduler.state_dict(),
+                    'loss': loss,
+                    'args': self.args,
+                }
+
+                checkpoint_path = kaggle_output_dir / f"transformer_checkpoint_epoch_{epoch+1:03d}.pth"
+                torch.save(checkpoint_data, checkpoint_path)
+                print(f"💾 Checkpoint已保存: {checkpoint_path.name}")
+
+                # 只保留最近的3个checkpoint
+                checkpoints = sorted(kaggle_output_dir.glob("transformer_checkpoint_*.pth"))
+                if len(checkpoints) > 3:
+                    for old_checkpoint in checkpoints[:-3]:
+                        old_checkpoint.unlink()
+                        print(f"🗑️ 删除旧checkpoint: {old_checkpoint.name}")
+
+        except Exception as e:
+            print(f"⚠️ Kaggle checkpoint保存失败: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Transformer训练脚本")
