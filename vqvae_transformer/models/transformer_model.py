@@ -65,8 +65,8 @@ class UserConditionEncoder(nn.Module):
         self.num_users = num_users
         self.embed_dim = embed_dim
         
-        # 用户ID嵌入
-        self.user_embedding = nn.Embedding(num_users, embed_dim)
+        # 用户ID嵌入 - 支持用户ID从1开始
+        self.user_embedding = nn.Embedding(num_users + 1, embed_dim)
         
         # 可学习的用户特征增强
         self.user_mlp = nn.Sequential(

@@ -190,8 +190,7 @@ class TransformerTrainer:
                 images = images.to(self.device)
                 user_ids = user_ids.to(self.device)
 
-                # 将用户ID从[1,31]转换为[0,30]以匹配嵌入层
-                user_ids = user_ids - 1
+                # 用户ID范围[1,31]直接使用，嵌入层已调整为支持这个范围
                 
                 # 使用VQ-VAE编码图像为token序列
                 with torch.no_grad():
