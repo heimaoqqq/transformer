@@ -111,29 +111,106 @@ class VQVAETrainer:
             restart_threshold=self.args.restart_threshold,
         )
     
-    def _create_dataloader(self):
-        """创建数据加载器"""
-        dataset = MicroDopplerDataset(
+    def _create_dataloaders(self):
+        """创建训练和验证数据加载器"""
+        # 创建完整数据集
+        full_dataset = MicroDopplerDataset(
             data_dir=self.args.data_dir,
             transform=self.transform,
             return_user_id=True,  # 返回用户ID用于后续Transformer训练
         )
-        
-        dataloader = DataLoader(
-            dataset,
+
+        # 分层划分数据集 (80% 训练, 20% 验证)
+        train_indices, val_indices = self._stratified_split(full_dataset, train_ratio=0.8)
+
+        print(f"📊 数据集划分:")
+        print(f"   总样本数: {len(full_dataset)}")
+        print(f"   训练集: {len(train_indices)} ({len(train_indices)/len(full_dataset)*100:.1f}%)")
+        print(f"   验证集: {len(val_indices)} ({len(val_indices)/len(full_dataset)*100:.1f}%)")
+
+        # 创建子数据集
+        train_dataset = torch.utils.data.Subset(full_dataset, train_indices)
+        val_dataset = torch.utils.data.Subset(full_dataset, val_indices)
+
+        # 创建数据加载器
+        train_dataloader = DataLoader(
+            train_dataset,
             batch_size=self.args.batch_size,
             shuffle=True,
             num_workers=self.args.num_workers,
             pin_memory=True,
             drop_last=True,
         )
-        
-        print(f"📊 数据集信息:")
-        print(f"   总样本数: {len(dataset)}")
-        print(f"   批次大小: {self.args.batch_size}")
-        print(f"   批次数量: {len(dataloader)}")
-        
-        return dataloader
+
+        val_dataloader = DataLoader(
+            val_dataset,
+            batch_size=self.args.batch_size,
+            shuffle=False,  # 验证集不需要shuffle
+            num_workers=self.args.num_workers,
+            pin_memory=True,
+            drop_last=False,
+        )
+
+        print(f"   训练批次数量: {len(train_dataloader)}")
+        print(f"   验证批次数量: {len(val_dataloader)}")
+
+        return train_dataloader, val_dataloader
+
+    def _stratified_split(self, dataset, train_ratio=0.8):
+        """按用户分层划分数据集，确保每个用户的样本都按比例分配"""
+        print(f"🔄 VQ-VAE分层划分 (确保每个用户都在训练集和验证集中)...")
+
+        # 收集每个用户的样本索引
+        user_indices = {}
+        for idx in range(len(dataset)):
+            try:
+                _, user_id = dataset[idx]
+                user_id = user_id.item() if hasattr(user_id, 'item') else user_id
+
+                if user_id not in user_indices:
+                    user_indices[user_id] = []
+                user_indices[user_id].append(idx)
+            except Exception as e:
+                print(f"⚠️ 处理样本{idx}时出错: {e}")
+                continue
+
+        print(f"   发现 {len(user_indices)} 个用户")
+
+        # 为每个用户分配样本到训练集和验证集
+        train_indices = []
+        val_indices = []
+
+        import random
+        random.seed(42)  # 固定随机种子
+
+        for user_id, indices in user_indices.items():
+            # 随机打乱该用户的样本
+            indices = indices.copy()
+            random.shuffle(indices)
+
+            # 计算训练集样本数（至少1个）
+            user_train_size = max(1, int(len(indices) * train_ratio))
+
+            # 如果用户只有1个样本，放到训练集
+            if len(indices) == 1:
+                train_indices.extend(indices)
+                print(f"   用户{user_id}: 1个样本 → 训练集")
+            else:
+                # 分配样本
+                user_train_indices = indices[:user_train_size]
+                user_val_indices = indices[user_train_size:]
+
+                train_indices.extend(user_train_indices)
+                val_indices.extend(user_val_indices)
+
+                print(f"   用户{user_id}: {len(indices)}个样本 → 训练集{len(user_train_indices)}个, 验证集{len(user_val_indices)}个")
+
+        # 随机打乱最终的索引列表
+        random.shuffle(train_indices)
+        random.shuffle(val_indices)
+
+        print(f"✅ VQ-VAE分层划分完成")
+        return train_indices, val_indices
     
     def train_epoch(self, dataloader, epoch):
         """训练一个epoch"""
@@ -388,30 +465,32 @@ class VQVAETrainer:
         # 显示存储信息
         self.get_storage_info()
 
-        # 创建数据加载器
-        dataloader = self._create_dataloader()
+        # 创建训练和验证数据加载器
+        train_dataloader, val_dataloader = self._create_dataloaders()
 
         best_psnr = 0
-        
+
         for epoch in range(self.args.num_epochs):
             # 训练
-            train_metrics = self.train_epoch(dataloader, epoch)
-            
+            train_metrics = self.train_epoch(train_dataloader, epoch)
+
             print(f"\nEpoch {epoch+1}/{self.args.num_epochs}:")
             print(f"  训练损失: {train_metrics['total_loss']:.4f}")
             print(f"  重建损失: {train_metrics['recon_loss']:.4f}")
             print(f"  VQ损失: {train_metrics['vq_loss']:.4f}")
-            
-            # 评估
+
+            # 评估（使用验证集）
             if (epoch + 1) % self.args.eval_interval == 0:
-                eval_metrics = self.evaluate(dataloader)
-                print(f"  PSNR: {eval_metrics['psnr']:.2f} dB")
-                print(f"  SSIM: {eval_metrics['ssim']:.4f}")
+                print(f"  📊 验证集评估:")
+                eval_metrics = self.evaluate(val_dataloader)
+                print(f"  验证PSNR: {eval_metrics['psnr']:.2f} dB")
+                print(f"  验证SSIM: {eval_metrics['ssim']:.4f}")
 
                 # 保存最佳模型
                 is_best = eval_metrics['psnr'] > best_psnr
                 if is_best:
                     best_psnr = eval_metrics['psnr']
+                    print(f"  🏆 新的最佳PSNR: {best_psnr:.2f} dB")
 
                 # 在评估时保存checkpoint和最佳模型
                 self.save_model(epoch, is_best, save_checkpoint=True)
