@@ -211,9 +211,10 @@ class TransformerTrainer:
                 # Transformer训练
                 self.optimizer.zero_grad()
                 
-                # 准备输入和目标
-                input_tokens = tokens[:, :-1]  # 除了最后一个token
-                target_tokens = tokens[:, 1:]  # 除了第一个token
+                # 准备输入和目标 - 确保长度匹配
+                # MicroDopplerTransformer会在内部添加用户token并处理序列
+                # 我们直接传递完整的token序列
+                input_tokens = tokens  # 完整的token序列 [B, 1024]
                 
                 # 前向传播
                 outputs = self.transformer_model(

@@ -212,12 +212,19 @@ class MicroDopplerTransformer(nn.Module):
             # 训练模式：构造输入序列
             seq_len = token_sequences.size(1)
             
-            # 输入序列：[user_token] + [token1, token2, ..., token_n-1]
+            # 自回归训练：输入和目标序列长度必须一致
             user_tokens = torch.full((batch_size, 1), self.user_token_id, device=device)
-            input_ids = torch.cat([user_tokens, token_sequences[:, :-1]], dim=1)
-            
-            # 目标序列：[user_token] + [token1, token2, ..., token_n]
-            labels = torch.cat([user_tokens, token_sequences], dim=1)
+
+            # 输入序列：[user_token] + [token1, token2, ..., token_n-1]
+            input_ids = torch.cat([user_tokens, token_sequences[:, :-1]], dim=1)  # [B, 1024]
+
+            # 目标序列：[token1, token2, ..., token_n-1, token_n] (预测下一个token)
+            # 第一个位置预测token1，最后一个位置预测token_n
+            labels = token_sequences  # [B, 1024]
+
+            # 为了匹配input_ids的长度，在labels前面填充-100 (忽略用户token的损失)
+            ignore_labels = torch.full((batch_size, 1), -100, device=device)
+            labels = torch.cat([ignore_labels, labels[:, :-1]], dim=1)  # [B, 1024]
             
             # 注意力掩码
             attention_mask = torch.ones_like(input_ids)
