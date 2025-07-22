@@ -126,7 +126,7 @@ class MicroDopplerTransformer(nn.Module):
         # 配置自定义GPT模型 - 专为VQ-VAE视觉token优化
         config = GPT2Config(
             vocab_size=vocab_size + 1,  # VQ-VAE码本大小(1024) + 1个特殊token
-            n_positions=max_seq_len + 1,  # 序列长度(256) + 1个用户token
+            n_positions=max_seq_len + 1,  # 序列长度(1024) + 1个用户token
             n_embd=n_embd,  # 嵌入维度(512)
             n_layer=n_layer,  # Transformer层数(8)
             n_head=n_head,  # 注意力头数(8)
@@ -160,7 +160,7 @@ class MicroDopplerTransformer(nn.Module):
         print(f"🤖 微多普勒Transformer初始化:")
         print(f"   模型类型: 自定义GPT2 (专为视觉token优化)")
         print(f"   词汇表大小: {vocab_size} + 1个特殊token")
-        print(f"   序列长度: {max_seq_len} + 1个用户token")
+        print(f"   序列长度: {max_seq_len} (32×32 token map) + 1个用户token")
         print(f"   用户数量: {num_users}")
         print(f"   嵌入维度: {n_embd}")
         print(f"   Transformer层数: {n_layer}")
