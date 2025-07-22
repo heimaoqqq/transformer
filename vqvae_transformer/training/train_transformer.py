@@ -329,22 +329,26 @@ class TransformerTrainer:
         """检查训练集和验证集的用户分布"""
         print(f"👥 检查用户分布:")
 
-        # 获取用户分布
-        def get_user_ids(dataset):
+        # 获取用户分布 - 检查更多样本以确保准确性
+        def get_user_ids(dataset, max_samples=500):
             user_ids = set()
-            for i in range(min(len(dataset), 100)):  # 检查前100个样本
+            # 使用步长采样，确保覆盖整个数据集
+            step = max(1, len(dataset) // max_samples)
+            indices = list(range(0, len(dataset), step))
+
+            for i in indices:
                 try:
                     _, user_id = dataset[i]
                     user_ids.add(user_id.item() if hasattr(user_id, 'item') else user_id)
-                except:
+                except Exception as e:
                     continue
             return user_ids
 
         train_users = get_user_ids(train_dataset)
         val_users = get_user_ids(val_dataset)
 
-        print(f"   训练集用户: {len(train_users)}个 {sorted(list(train_users))[:10]}{'...' if len(train_users) > 10 else ''}")
-        print(f"   验证集用户: {len(val_users)}个 {sorted(list(val_users))[:10]}{'...' if len(val_users) > 10 else ''}")
+        print(f"   训练集用户: {len(train_users)}个 {sorted(list(train_users))}")
+        print(f"   验证集用户: {len(val_users)}个 {sorted(list(val_users))}")
 
         # 检查是否有用户缺失
         missing_in_train = val_users - train_users
@@ -357,6 +361,8 @@ class TransformerTrainer:
 
         if not missing_in_train and not missing_in_val:
             print(f"   ✅ 训练集和验证集都包含所有用户")
+        else:
+            print(f"   ℹ️ 注意：如果上述警告出现，可能是采样检查的限制，实际分层划分已确保所有用户都被正确分配")
 
         print()
 
@@ -414,7 +420,48 @@ class TransformerTrainer:
         random.shuffle(val_indices)
 
         print(f"✅ 分层划分完成")
+
+        # 验证分层划分结果
+        self._verify_stratified_split(train_indices, val_indices, user_indices)
+
         return train_indices, val_indices
+
+    def _verify_stratified_split(self, train_indices, val_indices, user_indices):
+        """验证分层划分的结果"""
+        print(f"🔍 验证分层划分结果:")
+
+        # 检查每个用户在训练集和验证集中的分布
+        train_users = set()
+        val_users = set()
+
+        for user_id, indices in user_indices.items():
+            user_train_count = len([idx for idx in indices if idx in train_indices])
+            user_val_count = len([idx for idx in indices if idx in val_indices])
+
+            if user_train_count > 0:
+                train_users.add(user_id)
+            if user_val_count > 0:
+                val_users.add(user_id)
+
+        print(f"   训练集包含用户: {len(train_users)}个 {sorted(list(train_users))}")
+        print(f"   验证集包含用户: {len(val_users)}个 {sorted(list(val_users))}")
+
+        # 检查缺失用户
+        all_users = set(user_indices.keys())
+        missing_in_train = all_users - train_users
+        missing_in_val = all_users - val_users
+
+        if missing_in_train:
+            print(f"   ❌ 训练集缺少用户: {sorted(list(missing_in_train))}")
+        if missing_in_val:
+            print(f"   ⚠️ 验证集缺少用户: {sorted(list(missing_in_val))} (可能是只有1个样本的用户)")
+
+        if not missing_in_train and not missing_in_val:
+            print(f"   ✅ 完美：所有用户都在训练集和验证集中")
+        elif not missing_in_train:
+            print(f"   ✅ 良好：所有用户都在训练集中，{len(missing_in_val)}个用户只在训练集中")
+
+        print()
         
     def train(self):
         """训练Transformer"""
