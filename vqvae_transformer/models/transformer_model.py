@@ -141,6 +141,9 @@ class MicroDopplerTransformer(nn.Module):
         self.num_users = num_users
         self.n_embd = n_embd
         self.use_cross_attention = use_cross_attention
+
+        # 确保在使用前设置扩展因子
+        self.user_expansion_factor = 4 if use_cross_attention else 1
         
         # 用户条件编码器
         self.user_encoder = UserConditionEncoder(
@@ -205,9 +208,24 @@ class MicroDopplerTransformer(nn.Module):
         print(f"   交叉注意力: {use_cross_attention}")
         print(f"   预训练权重: 不使用 (从头训练)")
         
-        # 计算参数量
+        # 详细的参数量统计
+        user_encoder_params = sum(p.numel() for p in self.user_encoder.parameters())
+        transformer_params = sum(p.numel() for p in self.transformer.parameters())
+        if use_cross_attention:
+            user_proj_params = sum(p.numel() for p in self.user_proj.parameters())
+            user_expand_params = sum(p.numel() for p in self.user_expand.parameters())
+        else:
+            user_proj_params = 0
+            user_expand_params = 0
+
         total_params = sum(p.numel() for p in self.parameters())
-        print(f"   总参数量: {total_params/1e6:.1f}M")
+
+        print(f"   📊 参数量详细统计:")
+        print(f"      用户编码器: {user_encoder_params/1e6:.2f}M")
+        print(f"      Transformer主体: {transformer_params/1e6:.2f}M")
+        print(f"      用户投影层: {user_proj_params/1e6:.2f}M")
+        print(f"      用户扩展层: {user_expand_params/1e6:.2f}M")
+        print(f"      总参数量: {total_params/1e6:.1f}M")
 
     def _init_weights(self):
         """初始化模型权重 - 专为视觉token优化"""
@@ -228,6 +246,33 @@ class MicroDopplerTransformer(nn.Module):
         # 应用初始化到所有模块
         self.apply(_init_module)
         print("✅ 模型权重已重新初始化（专为视觉token优化）")
+
+        # 验证增强功能是否正确启用
+        self._verify_enhancements()
+
+    def _verify_enhancements(self):
+        """验证增强功能是否正确启用"""
+        print(f"🔍 验证模型增强功能:")
+
+        # 检查用户编码器
+        user_mlp_layers = len(self.user_encoder.user_mlp)
+        print(f"   用户MLP层数: {user_mlp_layers} (应该>6)")
+
+        # 检查自注意力
+        has_self_attention = hasattr(self.user_encoder, 'user_self_attention')
+        print(f"   用户自注意力: {'✅启用' if has_self_attention else '❌未启用'}")
+
+        # 检查交叉注意力增强
+        if self.use_cross_attention:
+            has_user_proj = hasattr(self, 'user_proj')
+            has_user_expand = hasattr(self, 'user_expand')
+            print(f"   增强用户投影: {'✅启用' if has_user_proj else '❌未启用'}")
+            print(f"   用户特征扩展: {'✅启用' if has_user_expand else '❌未启用'}")
+            print(f"   扩展因子: {self.user_expansion_factor}")
+
+        # 检查GPT2交叉注意力
+        gpt2_has_cross_attn = self.transformer.config.add_cross_attention
+        print(f"   GPT2交叉注意力: {'✅启用' if gpt2_has_cross_attn else '❌未启用'}")
     
     def prepare_inputs(
         self, 

@@ -147,6 +147,37 @@ class TransformerTrainer:
         print(f"   序列长度: {model.max_seq_len}")
         print(f"   用户数量: {self.args.num_users}")
 
+        # 测试增强功能是否工作
+        self._test_enhanced_features(model)
+
+    def _test_enhanced_features(self, model):
+        """测试增强功能是否正确工作"""
+        print(f"🧪 测试增强功能:")
+
+        # 创建测试数据
+        test_user_ids = torch.tensor([1, 2], device=self.device)
+        test_tokens = torch.randint(0, 1024, (2, 1024), device=self.device)
+
+        # 测试用户编码器
+        with torch.no_grad():
+            user_embeds = model.user_encoder(test_user_ids)
+            print(f"   用户嵌入形状: {user_embeds.shape} (应该是[2, 512])")
+
+            # 测试prepare_inputs
+            input_ids, labels, encoder_hidden_states, encoder_attention_mask = model.prepare_inputs(
+                test_user_ids, test_tokens
+            )
+            print(f"   输入序列形状: {input_ids.shape}")
+            print(f"   标签形状: {labels.shape}")
+
+            if encoder_hidden_states is not None:
+                print(f"   交叉注意力状态形状: {encoder_hidden_states.shape} (应该是[2, 4, 512])")
+                print(f"   注意力掩码形状: {encoder_attention_mask.shape}")
+            else:
+                print(f"   交叉注意力: 未使用")
+
+        print(f"✅ 增强功能测试完成")
+
         return model
         
     def train(self):
