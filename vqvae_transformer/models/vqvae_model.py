@@ -11,23 +11,19 @@ import torch.nn.functional as F
 import numpy as np
 from typing import Dict, Tuple, Optional
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
-# 条件导入diffusers - 在Transformer环境中可能不可用
-try:
-    from diffusers.models.autoencoders.vq_model import VQModel
-    from diffusers.models.autoencoders.vq_model import VectorQuantizer
-    DIFFUSERS_AVAILABLE = True
-except ImportError:
-    print("⚠️ diffusers不可用，使用兼容模式")
-    DIFFUSERS_AVAILABLE = False
-    # 创建兼容的基类
-    class VQModel(nn.Module):
-        def __init__(self, *args, **kwargs):
-            super().__init__()
+# 导入diffusers - 统一环境保证可用
+from diffusers.models.autoencoders.vq_model import VQModel
+from diffusers.models.autoencoders.vq_model import VectorQuantizer
 
-    class VectorQuantizer(nn.Module):
-        def __init__(self, *args, **kwargs):
-            super().__init__()
+@dataclass
+class VQVAEOutput:
+    """VQ-VAE输出类，兼容diffusers格式"""
+    sample: torch.Tensor
+    vq_loss: torch.Tensor
+    encoding_indices: Optional[torch.Tensor] = None
+    latents: Optional[torch.Tensor] = None
 
 class EMAVectorQuantizer(nn.Module):
     """
@@ -61,8 +57,12 @@ class EMAVectorQuantizer(nn.Module):
         self.register_buffer('ema_weight', self.embedding.weight.data.clone())
         
         # 监控参数
-        self.register_buffer('usage_count', torch.zeros(n_embed))
+        self.register_buffer('usage_count', torch.zeros(n_embed))  # 累积使用次数
         self.register_buffer('total_updates', torch.tensor(0))
+
+        # Epoch级别统计
+        self.register_buffer('epoch_usage_mask', torch.zeros(n_embed, dtype=torch.bool))  # 当前epoch是否使用
+        self.register_buffer('epoch_usage_count', torch.zeros(n_embed))  # 当前epoch使用次数
     
     def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -76,7 +76,7 @@ class EMAVectorQuantizer(nn.Module):
         """
         # 展平输入 [B, C, H, W] -> [B*H*W, C]
         input_shape = inputs.shape
-        flat_input = inputs.view(-1, self.embed_dim)
+        flat_input = inputs.contiguous().view(-1, self.embed_dim)
         
         # 计算距离
         distances = (torch.sum(flat_input**2, dim=1, keepdim=True) 
@@ -89,7 +89,7 @@ class EMAVectorQuantizer(nn.Module):
         encodings.scatter_(1, encoding_indices, 1)
         
         # 量化
-        quantized = torch.matmul(encodings, self.embedding.weight).view(input_shape)
+        quantized = torch.matmul(encodings, self.embedding.weight).contiguous().view(input_shape)
         
         # 更新EMA (仅在训练时)
         if self.training:
@@ -104,7 +104,7 @@ class EMAVectorQuantizer(nn.Module):
         # Straight-through estimator
         quantized = inputs + (quantized - inputs).detach()
         
-        return quantized, loss, encoding_indices.view(input_shape[0], -1)
+        return quantized, loss, encoding_indices.contiguous().view(input_shape[0], -1)
     
     def _update_ema(self, encodings: torch.Tensor, flat_input: torch.Tensor):
         """更新EMA参数"""
@@ -128,8 +128,14 @@ class EMAVectorQuantizer(nn.Module):
         """更新使用统计"""
         with torch.no_grad():
             unique_indices = torch.unique(encoding_indices)
+
+            # 累积统计 (保留原有逻辑)
             self.usage_count[unique_indices] += 1
             self.total_updates += 1
+
+            # Epoch统计 (新增)
+            self.epoch_usage_mask[unique_indices] = True
+            self.epoch_usage_count[unique_indices] += 1
     
     def _restart_unused_codes(self):
         """重置未使用的码本向量"""
@@ -155,30 +161,66 @@ class EMAVectorQuantizer(nn.Module):
     def get_codebook_usage(self) -> Dict[str, float]:
         """获取码本使用统计"""
         with torch.no_grad():
-            active_codes = (self.usage_count > 0).sum().item()
-            usage_entropy = self._compute_entropy(self.usage_count)
-            
+            # 累积统计
+            cumulative_active = (self.usage_count > 0).sum().item()
+            cumulative_rate = cumulative_active / self.n_embed
+            cumulative_entropy = self._compute_entropy(self.usage_count)
+
+            # 当前epoch统计
+            epoch_active = self.epoch_usage_mask.sum().item()
+            epoch_rate = epoch_active / self.n_embed
+            epoch_entropy = self._compute_entropy(self.epoch_usage_count)
+
             return {
-                'active_codes': active_codes,
+                # Epoch级别统计 (主要关注)
+                'epoch_active_codes': epoch_active,
+                'epoch_usage_rate': epoch_rate,
+                'epoch_entropy': epoch_entropy,
+
+                # 累积统计 (参考)
+                'cumulative_active_codes': cumulative_active,
+                'cumulative_usage_rate': cumulative_rate,
+                'cumulative_entropy': cumulative_entropy,
+
+                # 通用信息
                 'total_codes': self.n_embed,
-                'usage_rate': active_codes / self.n_embed,
-                'usage_entropy': usage_entropy,
-                'max_usage': self.usage_count.max().item(),
-                'min_usage': self.usage_count[self.usage_count > 0].min().item() if active_codes > 0 else 0,
+                'total_updates': self.total_updates.item(),
+
+                # 兼容性 (保持原有接口)
+                'active_codes': epoch_active,  # 默认返回epoch统计
+                'usage_rate': epoch_rate,      # 默认返回epoch统计
+                'usage_entropy': epoch_entropy, # 默认返回epoch统计
             }
     
     def _compute_entropy(self, counts: torch.Tensor) -> float:
-        """计算使用分布的熵"""
+        """
+        计算使用分布的熵
+        修复: 考虑完整的概率分布，包括未使用的码本
+        """
         counts = counts.float()
         total = counts.sum()
         if total == 0:
             return 0.0
-        
+
+        # 计算所有码本的概率，包括未使用的(概率为0)
         probs = counts / total
-        probs = probs[probs > 0]  # 只考虑非零概率
-        entropy = -(probs * torch.log(probs)).sum().item()
+
+        # 只对非零概率计算log，避免log(0)
+        log_probs = torch.zeros_like(probs)
+        mask = probs > 0
+        log_probs[mask] = torch.log(probs[mask])
+
+        # 计算熵: H = -Σ p(x) * log(p(x))
+        # 对于p(x)=0的项，p(x)*log(p(x))=0 (约定0*log(0)=0)
+        entropy = -(probs * log_probs).sum().item()
         return entropy
-    
+
+    def reset_epoch_stats(self):
+        """重置epoch级别的统计信息"""
+        with torch.no_grad():
+            self.epoch_usage_mask.zero_()
+            self.epoch_usage_count.zero_()
+
     def plot_usage_distribution(self, save_path: Optional[str] = None):
         """可视化码本使用分布"""
         usage = self.usage_count.cpu().numpy()
@@ -296,16 +338,16 @@ class MicroDopplerVQVAE(VQModel):
         """完整的前向传播"""
         encode_result = self.encode(sample, return_dict=True)
         dec = self.decode(encode_result['latents'])
-        
+
         if not return_dict:
             return (dec, encode_result['vq_loss'])
-        
-        return {
-            'sample': dec,
-            'vq_loss': encode_result['vq_loss'],
-            'encoding_indices': encode_result['encoding_indices'],
-            'latents': encode_result['latents'],
-        }
+
+        return VQVAEOutput(
+            sample=dec,
+            vq_loss=encode_result['vq_loss'],
+            encoding_indices=encode_result['encoding_indices'],
+            latents=encode_result['latents'],
+        )
     
     def get_codebook_stats(self) -> Dict[str, float]:
         """获取码本统计信息"""
@@ -319,3 +361,8 @@ class MicroDopplerVQVAE(VQModel):
         """重置码本统计"""
         self.quantize.usage_count.zero_()
         self.quantize.total_updates.zero_()
+        self.quantize.reset_epoch_stats()
+
+    def reset_epoch_stats(self):
+        """重置epoch级别统计"""
+        self.quantize.reset_epoch_stats()

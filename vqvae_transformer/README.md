@@ -1,12 +1,12 @@
 # 🎯 VQ-VAE + Transformer 微多普勒时频图生成
 
-基于VQ-VAE和Transformer的微多普勒时频图生成项目，采用**分阶段训练策略**解决依赖冲突问题。
+基于VQ-VAE和Transformer的微多普勒时频图生成项目，支持**统一环境训练**和**分阶段训练**两种方式。
 
 ## 🎯 项目特点
 
-- ✅ **分阶段训练**: 解决diffusers与transformers的依赖冲突
-- ✅ **环境优化**: 每个阶段使用最优版本，无妥协
-- ✅ **跨环境兼容**: VQ-VAE模型在不同环境间完全兼容
+- ✅ **统一环境训练**: 使用diffusers官方配置，一个环境支持全流程 (推荐)
+- ✅ **分阶段训练**: 备选方案，解决特殊情况下的依赖问题
+- ✅ **智能版本选择**: 自动选择最佳diffusers版本，确保VQModel可用
 - ✅ **更低GPU要求**: 8GB即可训练，16GB绰绰有余
 - ✅ **更适合小数据**: 离散化天然正则化，防止过拟合
 - ✅ **更好的条件控制**: Token级精确控制用户特征
@@ -34,15 +34,39 @@ vqvae_transformer/
 └── requirements.txt                    # 基础依赖列表
 ## 🚀 快速开始
 
-### 🎯 分阶段训练 (推荐方法)
+### 🎯 统一环境训练 (推荐方法)
 
-#### **为什么需要分阶段训练？**
+#### **为什么推荐统一环境？**
 
-由于依赖冲突问题：
-- **diffusers 0.24.0** 需要 `cached_download` (在 huggingface_hub < 0.26.0 中)
-- **transformers 4.53.2** 要求 `huggingface_hub >= 0.30.0` (没有 cached_download)
+基于diffusers官方配置：
+- **官方支持**: `pip install diffusers[torch] transformers` 是官方推荐配置
+- **简化部署**: 一个环境支持VQ-VAE和Transformer训练
+- **减少冲突**: 避免环境切换带来的问题
+- **智能版本**: 自动选择最佳diffusers版本，确保VQModel可用
 
-分阶段训练完美解决这个冲突，每个阶段使用最优版本。
+#### **统一环境训练**
+
+```bash
+# 1. 配置统一环境 (自动修复版本冲突)
+python setup_unified_environment.py
+
+# 2. 验证环境安装
+python test_unified_environment.py
+
+# 3. 完整API兼容性检查
+python test_api_compatibility.py
+
+# 4. 完整训练流程
+python train_main.py --data_dir /kaggle/input/dataset
+
+# 或分步骤训练
+python train_main.py --skip_transformer --data_dir /kaggle/input/dataset  # 仅VQ-VAE
+python train_main.py --skip_vqvae --data_dir /kaggle/input/dataset        # 仅Transformer
+```
+
+### 🔄 分阶段训练 (备选方案)
+
+如果遇到特殊的依赖问题，可以使用分阶段训练：
 
 #### **阶段1: VQ-VAE训练**
 
@@ -50,7 +74,10 @@ vqvae_transformer/
 # 1. 配置VQ-VAE专用环境
 python setup_vqvae_environment.py
 
-# 2. 训练VQ-VAE (跳过Transformer)
+# 2. 验证VQ-VAE环境
+python test_api_compatibility.py
+
+# 3. 训练VQ-VAE (跳过Transformer)
 python train_main.py --skip_transformer --data_dir /kaggle/input/dataset
 
 # 或使用专用脚本
@@ -58,10 +85,11 @@ python training/train_vqvae.py --data_dir /kaggle/input/dataset --output_dir ./o
 ```
 
 **VQ-VAE环境特点**：
-- ✅ `diffusers==0.24.0` - VQ-VAE核心功能
-- ✅ `huggingface_hub==0.25.2` - 支持cached_download
+- ✅ 使用diffusers官方配置: `pip install diffusers[torch] transformers`
+- ✅ `diffusers` 最新版本 (0.34.0，VQModel仍然可用)
+- ✅ `transformers` 官方要求的依赖
+- ✅ 正确导入路径: `from diffusers.models.autoencoders.vq_model import VQModel`
 - ✅ 专注图像处理和编码/解码
-- ❌ 不安装transformers (避免冲突)
 
 #### **阶段2: Transformer训练**
 
@@ -69,7 +97,10 @@ python training/train_vqvae.py --data_dir /kaggle/input/dataset --output_dir ./o
 # 1. 重启环境并配置Transformer专用环境
 python setup_transformer_environment.py
 
-# 2. 训练Transformer (跳过VQ-VAE)
+# 2. 验证Transformer环境
+python test_api_compatibility.py
+
+# 3. 训练Transformer (跳过VQ-VAE)
 python train_main.py --skip_vqvae --data_dir /kaggle/input/dataset
 
 # 或使用专用脚本
@@ -153,9 +184,9 @@ python validate_main.py \
 
 | 组件 | VQ-VAE环境 | Transformer环境 |
 |------|-----------|----------------|
-| **diffusers** | 0.24.0 | 不需要 |
-| **transformers** | 不安装 | >=4.50.0 |
-| **huggingface_hub** | 0.25.2 | >=0.30.0 |
+| **diffusers** | 最新版本 (0.34.0) | 不需要 |
+| **transformers** | 最新版本 (官方要求) | >=4.50.0 |
+| **huggingface_hub** | 自动兼容版本 | >=0.30.0 |
 | **PyTorch** | 2.1.0+cu121 | 2.1.0+cu121 |
 
 ### **跨环境兼容性保证**
@@ -351,10 +382,41 @@ diffusers==0.24.0          # 目标版本
 - 生成样本质量监控
 - 验证指标追踪
 
+### 依赖冲突解决
+
+#### **VQModel版本问题** ⭐ **重要发现**
+```bash
+# 问题: VQModel在diffusers 0.31版本被移除
+# 错误: "No module named 'diffusers.models.autoencoders.vq_model'"
+# 解决: 使用diffusers 0.30.x版本 (最后支持VQModel的版本)
+
+# 正确的版本组合:
+# diffusers==0.30.3 + transformers==4.36.2 + huggingface_hub==0.20.3
+```
+
+#### **其他常见问题**
+```bash
+# 问题1: OfflineModeIsEnabled导入错误
+# 错误: "cannot import name 'OfflineModeIsEnabled' from 'huggingface_hub.utils'"
+# 解决: setup_unified_environment.py 已自动修复
+
+# 问题2: NumPy版本冲突
+# 错误: "NumPy 1.x cannot be run in NumPy 2.x"
+# 解决: 自动降级到NumPy 1.x版本
+
+# 问题3: 如果统一环境仍失败
+# 使用分阶段训练作为备选
+python setup_vqvae_environment.py
+python test_api_compatibility.py
+```
+
 ### 环境验证命令
 ```bash
-# 快速检查
-python check_environment.py
+# 完整API兼容性检查
+python test_api_compatibility.py
+
+# 快速环境检查
+python test_unified_environment.py
 
 # 详细环境信息
 python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"

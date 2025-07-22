@@ -17,11 +17,11 @@ import numpy as np
 import json
 
 # 添加项目路径
-sys.path.append(str(Path(__file__).parent.parent.parent))
+sys.path.append(str(Path(__file__).parent.parent))
 
-from vqvae_transformer.models.transformer_model import MicroDopplerTransformer
-from vqvae_transformer.models.vqvae_model import MicroDopplerVQVAE
-from vqvae_transformer.utils.data_loader import MicroDopplerDataset
+from models.transformer_model import MicroDopplerTransformer
+from models.vqvae_model import MicroDopplerVQVAE
+from utils.data_loader import MicroDopplerDataset
 
 class TransformerTrainer:
     """Transformer训练器"""
@@ -59,29 +59,51 @@ class TransformerTrainer:
     def _load_vqvae_model(self):
         """加载预训练的VQ-VAE模型"""
         vqvae_path = Path(self.args.vqvae_path)
-        
-        # 查找模型文件
-        model_files = list(vqvae_path.glob("*.pth"))
-        if not model_files:
-            raise FileNotFoundError(f"在 {vqvae_path} 中未找到VQ-VAE模型文件")
-        
-        model_file = model_files[0]  # 使用第一个找到的模型文件
-        print(f"📂 加载VQ-VAE模型: {model_file}")
-        
+
+        # 优先使用final_model目录 (diffusers格式)
+        final_model_path = vqvae_path / "final_model"
+        if final_model_path.exists():
+            print(f"📂 加载VQ-VAE模型 (diffusers格式): {final_model_path}")
+            try:
+                from models.vqvae_model import MicroDopplerVQVAE
+                vqvae_model = MicroDopplerVQVAE.from_pretrained(final_model_path)
+                vqvae_model.to(self.device)
+                vqvae_model.eval()
+                print("✅ 成功加载diffusers格式模型")
+                return vqvae_model
+            except Exception as e:
+                print(f"⚠️ diffusers格式加载失败: {e}")
+                print("🔄 尝试checkpoint格式...")
+
+        # 备选：使用checkpoint文件
+        best_model_path = vqvae_path / "best_model.pth"
+        if best_model_path.exists():
+            model_file = best_model_path
+        else:
+            # 查找其他checkpoint文件
+            model_files = list(vqvae_path.glob("*.pth"))
+            if not model_files:
+                raise FileNotFoundError(f"在 {vqvae_path} 中未找到VQ-VAE模型文件")
+            model_file = model_files[0]
+
+        print(f"📂 加载VQ-VAE模型 (checkpoint格式): {model_file}")
+
         # 加载checkpoint
         checkpoint = torch.load(model_file, map_location=self.device)
-        
+
         # 重建VQ-VAE模型
+        from models.vqvae_model import MicroDopplerVQVAE
         vqvae_model = MicroDopplerVQVAE(
             num_vq_embeddings=checkpoint['args'].codebook_size,
             commitment_cost=checkpoint['args'].commitment_cost,
             ema_decay=getattr(checkpoint['args'], 'ema_decay', 0.99),
         )
-        
+
         # 加载权重
         vqvae_model.load_state_dict(checkpoint['model_state_dict'])
         vqvae_model.to(self.device)
         vqvae_model.eval()
+        print("✅ 成功加载checkpoint格式模型")
         
         print(f"✅ VQ-VAE模型加载成功")
         return vqvae_model

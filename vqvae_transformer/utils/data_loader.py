@@ -33,14 +33,22 @@ except ImportError:
         def _load_data(self):
             """加载数据"""
             for user_dir in self.data_dir.iterdir():
-                if user_dir.is_dir() and user_dir.name.startswith('ID_'):
+                if user_dir.is_dir() and user_dir.name.startswith('ID'):
                     try:
-                        user_id = int(user_dir.name.split('_')[1])
-                        for img_path in user_dir.glob("*.png"):
-                            self.data.append({
-                                'image_path': str(img_path),
-                                'user_id': user_id,
-                            })
+                        # 处理 ID1, ID_2, ID_3 等格式
+                        dir_name = user_dir.name
+                        if '_' in dir_name:
+                            user_id = int(dir_name.split('_')[1])  # ID_2 -> 2
+                        else:
+                            user_id = int(dir_name[2:])  # ID1 -> 1
+
+                        # 收集所有图像文件
+                        for ext in ['*.png', '*.jpg', '*.jpeg']:
+                            for img_path in user_dir.glob(ext):
+                                self.data.append({
+                                    'image_path': str(img_path),
+                                    'user_id': user_id,
+                                })
                     except ValueError:
                         continue
         
@@ -140,18 +148,24 @@ def create_user_data_dict(data_dir: str) -> Dict[int, List[str]]:
     user_data = {}
     
     for user_dir in data_path.iterdir():
-        if user_dir.is_dir() and user_dir.name.startswith('ID_'):
+        if user_dir.is_dir() and user_dir.name.startswith('ID'):
             try:
-                user_id = int(user_dir.name.split('_')[1])
+                # 处理 ID1, ID_2, ID_3 等格式
+                dir_name = user_dir.name
+                if '_' in dir_name:
+                    user_id = int(dir_name.split('_')[1])  # ID_2 -> 2
+                else:
+                    user_id = int(dir_name[2:])  # ID1 -> 1
+
                 image_paths = []
-                
+
                 # 收集所有图像文件
                 for ext in ['*.png', '*.jpg', '*.jpeg']:
                     image_paths.extend(list(user_dir.glob(ext)))
-                
+
                 if image_paths:
                     user_data[user_id] = [str(p) for p in image_paths]
-                    
+
             except ValueError:
                 continue
     
@@ -178,26 +192,83 @@ def create_balanced_dataset(
         max_samples_per_user=samples_per_user,
     )
 
-def get_default_transform(resolution: int = 128, normalize: bool = True) -> transforms.Compose:
+def get_default_transform(
+    resolution: int = 128,
+    normalize: bool = True,
+    interpolation: str = "lanczos"
+) -> transforms.Compose:
     """
     获取默认的图像变换
     Args:
-        resolution: 目标分辨率
+        resolution: 目标分辨率 (从256x256缩放到指定尺寸)
         normalize: 是否归一化到[-1, 1]
+        interpolation: 插值方法 ("lanczos", "bicubic", "bilinear", "antialias")
     Returns:
         transform: 图像变换
     """
-    transform_list = [
-        transforms.Resize((resolution, resolution)),
-        transforms.ToTensor(),
-    ]
-    
+    # 选择插值方法
+    interpolation_map = {
+        "lanczos": transforms.InterpolationMode.LANCZOS,
+        "bicubic": transforms.InterpolationMode.BICUBIC,
+        "bilinear": transforms.InterpolationMode.BILINEAR,
+        "antialias": transforms.InterpolationMode.BILINEAR,  # 配合antialias=True
+    }
+
+    interp_mode = interpolation_map.get(interpolation, transforms.InterpolationMode.LANCZOS)
+
+    # 构建变换列表
+    if interpolation == "antialias":
+        # 使用抗锯齿缩放 (PyTorch 1.11+)
+        transform_list = [
+            transforms.Resize((resolution, resolution),
+                            interpolation=interp_mode,
+                            antialias=True),
+            transforms.ToTensor(),  # [0, 1]
+        ]
+    else:
+        transform_list = [
+            transforms.Resize((resolution, resolution), interpolation=interp_mode),
+            transforms.ToTensor(),  # [0, 1]
+        ]
+
     if normalize:
+        # 归一化到[-1, 1]，适配VQ-VAE训练
         transform_list.append(
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         )
-    
+
     return transforms.Compose(transform_list)
+
+def denormalize_tensor(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    反归一化tensor从[-1, 1]到[0, 1]
+    Args:
+        tensor: 归一化的tensor [-1, 1]
+    Returns:
+        tensor: 反归一化的tensor [0, 1]
+    """
+    return (tensor + 1.0) / 2.0
+
+def tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
+    """
+    将tensor转换为PIL图像
+    Args:
+        tensor: [C, H, W] tensor，范围[-1, 1]或[0, 1]
+    Returns:
+        image: PIL图像
+    """
+    # 如果是[-1, 1]范围，先反归一化
+    if tensor.min() < 0:
+        tensor = denormalize_tensor(tensor)
+
+    # 转换为PIL
+    tensor = torch.clamp(tensor, 0, 1)
+    tensor = (tensor * 255).byte()
+
+    if tensor.dim() == 3:
+        tensor = tensor.permute(1, 2, 0)  # [C, H, W] -> [H, W, C]
+
+    return Image.fromarray(tensor.cpu().numpy())
 
 class VQTokenDataset(Dataset):
     """

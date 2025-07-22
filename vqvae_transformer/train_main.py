@@ -77,7 +77,10 @@ def train_vqvae(args, config):
         "--num_workers", str(config["num_workers"]),
         "--sample_interval", "500",
         "--eval_interval", "5",
-        "--codebook_monitor_interval", "10",
+        "--codebook_monitor_interval", "1",
+        "--keep_checkpoints", "3",  # 只保留最近3个checkpoint
+        "--milestone_interval", "10",  # 每10个epoch保存里程碑
+        "--auto_cleanup",  # 启用自动清理
     ]
     
     print(f"🚀 启动VQ-VAE训练...")
@@ -103,9 +106,18 @@ def train_transformer(args, config):
     transformer_output = Path(args.output_dir) / "transformer"
     
     # 检查VQ-VAE是否存在
-    if not (vqvae_path / "final_model").exists() and not (vqvae_path / "best_model.pth").exists():
+    final_model_exists = (vqvae_path / "final_model").exists()
+    checkpoint_exists = (vqvae_path / "best_model.pth").exists() or len(list(vqvae_path.glob("*.pth"))) > 0
+
+    if not final_model_exists and not checkpoint_exists:
         print(f"❌ 未找到VQ-VAE模型: {vqvae_path}")
+        print(f"   期望文件: final_model/ 或 *.pth")
         return False
+
+    if final_model_exists:
+        print(f"✅ 找到VQ-VAE模型 (diffusers格式): {vqvae_path}/final_model")
+    else:
+        print(f"✅ 找到VQ-VAE模型 (checkpoint格式): {vqvae_path}/*.pth")
     
     cmd = [
         "python", "training/train_transformer.py",
@@ -150,7 +162,7 @@ def main():
     
     # 数据参数
     parser.add_argument("--data_dir", type=str, default="/kaggle/input/dataset",
-                       help="数据集目录")
+                       help="数据集目录 (包含ID1, ID_2, ..., ID_31目录)")
     parser.add_argument("--output_dir", type=str, default="/kaggle/working/outputs/vqvae_transformer",
                        help="输出目录")
     parser.add_argument("--resolution", type=int, default=128,

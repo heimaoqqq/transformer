@@ -8,14 +8,15 @@ torchvision==0.16.0+cu118
 torchaudio==2.1.0+cu118
 --extra-index-url https://download.pytorch.org/whl/cu118
 
-# HuggingFace生态系统 (兼容版本组合)
-# 注意：这些版本经过测试，确保cached_download等API可用
-huggingface-hub==0.17.3     # 支持cached_download的最后版本
-tokenizers==0.14.1          # 兼容版本
-safetensors==0.4.0          # 稳定版本
-transformers==4.35.2        # 兼容版本
-accelerate==0.24.1          # 兼容版本
-diffusers==0.24.0           # 兼容版本
+# HuggingFace生态系统 (diffusers官方指定配置)
+# 官方安装命令: pip install diffusers[torch] transformers
+# 注意：使用diffusers官方指定的版本组合，确保API兼容性
+diffusers                        # 最新版本 (0.34.0，VQModel仍然可用)
+transformers                     # 官方要求的依赖
+huggingface-hub                  # 自动安装兼容版本
+tokenizers                       # 自动安装兼容版本
+safetensors                      # 稳定版本
+accelerate                       # 加速库
 
 # 数据处理
 numpy==1.24.3

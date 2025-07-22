@@ -19,11 +19,11 @@ from PIL import Image
 import matplotlib.pyplot as plt
 
 # 添加项目路径
-sys.path.append(str(Path(__file__).parent.parent.parent))
+sys.path.append(str(Path(__file__).parent.parent))
 
-from vqvae_transformer.models.vqvae_model import MicroDopplerVQVAE
-from vqvae_transformer.utils.data_loader import MicroDopplerDataset
-from vqvae_transformer.utils.metrics import calculate_psnr, calculate_ssim
+from models.vqvae_model import MicroDopplerVQVAE
+from utils.data_loader import MicroDopplerDataset
+from utils.metrics import calculate_psnr, calculate_ssim
 
 class VQVAETrainer:
     """VQ-VAE训练器"""
@@ -36,12 +36,33 @@ class VQVAETrainer:
         self.output_dir = Path(args.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 设置数据变换
+        # 设置数据变换 (256x256 -> 128x128) - 使用高质量缩放
+        interpolation_method = getattr(args, 'interpolation', 'lanczos')
+
+        if interpolation_method == 'antialias':
+            # 抗锯齿缩放 (推荐用于深度学习)
+            resize_transform = transforms.Resize(
+                (args.resolution, args.resolution),
+                interpolation=transforms.InterpolationMode.BILINEAR,
+                antialias=True
+            )
+        else:
+            # 传统插值方法
+            interp_map = {
+                'lanczos': transforms.InterpolationMode.LANCZOS,
+                'bicubic': transforms.InterpolationMode.BICUBIC,
+                'bilinear': transforms.InterpolationMode.BILINEAR,
+            }
+            interp_mode = interp_map.get(interpolation_method, transforms.InterpolationMode.LANCZOS)
+            resize_transform = transforms.Resize((args.resolution, args.resolution), interpolation=interp_mode)
+
         self.transform = transforms.Compose([
-            transforms.Resize((args.resolution, args.resolution)),
-            transforms.ToTensor(),
+            resize_transform,
+            transforms.ToTensor(),  # [0, 1]
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # [-1, 1]
         ])
+
+        print(f"🖼️ 图像缩放: 256x256 -> {args.resolution}x{args.resolution} ({interpolation_method})")
         
         # 初始化模型
         self.model = self._create_model()
@@ -117,11 +138,14 @@ class VQVAETrainer:
     def train_epoch(self, dataloader, epoch):
         """训练一个epoch"""
         self.model.train()
-        
+
+        # 重置epoch级别的码本统计
+        self.model.reset_epoch_stats()
+
         total_loss = 0
         total_recon_loss = 0
         total_vq_loss = 0
-        
+
         pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{self.args.num_epochs}")
         
         for batch_idx, batch in enumerate(pbar):
@@ -137,8 +161,8 @@ class VQVAETrainer:
             self.optimizer.zero_grad()
             
             outputs = self.model(images, return_dict=True)
-            reconstructed = outputs['sample']
-            vq_loss = outputs['vq_loss']
+            reconstructed = outputs.sample
+            vq_loss = outputs.vq_loss
             
             # 计算重建损失
             recon_loss = self.recon_criterion(reconstructed, images)
@@ -204,12 +228,12 @@ class VQVAETrainer:
         
         for i in range(n_samples):
             # 原图
-            axes[0, i].imshow(original[i].cpu().permute(1, 2, 0))
+            axes[0, i].imshow(original[i].cpu().detach().permute(1, 2, 0).numpy())
             axes[0, i].set_title(f'Original {i+1}')
             axes[0, i].axis('off')
-            
+
             # 重建图
-            axes[1, i].imshow(reconstructed[i].cpu().permute(1, 2, 0))
+            axes[1, i].imshow(reconstructed[i].cpu().detach().permute(1, 2, 0).numpy())
             axes[1, i].set_title(f'Reconstructed {i+1}')
             axes[1, i].axis('off')
         
@@ -235,7 +259,7 @@ class VQVAETrainer:
                 images = images.to(self.device)
                 
                 outputs = self.model(images, return_dict=True)
-                reconstructed = outputs['sample']
+                reconstructed = outputs.sample
                 
                 # 反归一化到[0,1]
                 images_eval = (images * 0.5 + 0.5).clamp(0, 1)
@@ -255,8 +279,13 @@ class VQVAETrainer:
         
         return {'psnr': avg_psnr, 'ssim': avg_ssim}
     
-    def save_model(self, epoch, is_best=False):
-        """保存模型"""
+    def save_model(self, epoch, is_best=False, save_checkpoint=True):
+        """
+        保存模型，智能管理存储空间
+        - 只在评估时保存checkpoint
+        - 保存最佳模型
+        - 定期保存里程碑模型
+        """
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
@@ -264,30 +293,104 @@ class VQVAETrainer:
             'scheduler_state_dict': self.scheduler.state_dict(),
             'args': self.args,
         }
-        
-        # 保存检查点
-        checkpoint_path = self.output_dir / f"checkpoint_epoch_{epoch:03d}.pth"
-        torch.save(checkpoint, checkpoint_path)
-        
+
+        # 只在评估时或里程碑时保存checkpoint
+        is_milestone = (epoch + 1) % self.args.milestone_interval == 0 or epoch == self.args.num_epochs - 1
+
+        if save_checkpoint or is_milestone:
+            checkpoint_path = self.output_dir / f"checkpoint_epoch_{epoch:03d}.pth"
+            torch.save(checkpoint, checkpoint_path)
+            print(f"💾 保存checkpoint: epoch_{epoch:03d}.pth")
+
+            # 清理旧的checkpoint (如果启用自动清理)
+            if self.args.auto_cleanup:
+                self._cleanup_old_checkpoints(epoch)
+
         # 保存最佳模型
         if is_best:
             best_path = self.output_dir / "best_model.pth"
             torch.save(checkpoint, best_path)
-            print(f"💾 保存最佳模型: {best_path}")
-        
-        # 保存最终模型
-        final_path = self.output_dir / "final_model"
-        final_path.mkdir(exist_ok=True)
-        self.model.save_pretrained(final_path)
-        print(f"💾 保存模型: {final_path}")
+            print(f"🏆 保存最佳模型: {best_path} (PSNR提升)")
+
+        # 保存里程碑模型 (单独保存，不与checkpoint重复)
+        if is_milestone and not save_checkpoint:
+            milestone_path = self.output_dir / f"milestone_epoch_{epoch:03d}.pth"
+            torch.save(checkpoint, milestone_path)
+            print(f"🎯 保存里程碑: milestone_epoch_{epoch:03d}.pth")
+
+        # 只在最后保存final_model
+        if epoch == self.args.num_epochs - 1:
+            final_path = self.output_dir / "final_model"
+            final_path.mkdir(exist_ok=True)
+            self.model.save_pretrained(final_path)
+            print(f"🎉 保存最终模型: {final_path}")
+
+    def _cleanup_old_checkpoints(self, current_epoch):
+        """清理旧的checkpoint文件，节省存储空间"""
+        try:
+            # 获取所有checkpoint文件
+            checkpoint_files = list(self.output_dir.glob("checkpoint_epoch_*.pth"))
+
+            if len(checkpoint_files) <= self.args.keep_checkpoints:  # 如果文件数量少于等于设定值，不清理
+                return
+
+            # 按epoch排序
+            checkpoint_files.sort(key=lambda x: int(x.stem.split('_')[-1]))
+
+            # 保留最近N个checkpoint
+            keep_recent = self.args.keep_checkpoints
+            files_to_keep = set(checkpoint_files[-keep_recent:])
+
+            # 保留里程碑checkpoint (根据设定间隔)
+            for f in checkpoint_files:
+                epoch_num = int(f.stem.split('_')[-1])
+                if epoch_num % self.args.milestone_interval == 0:  # 里程碑
+                    files_to_keep.add(f)
+
+            # 删除不需要保留的文件
+            deleted_count = 0
+            for f in checkpoint_files:
+                if f not in files_to_keep:
+                    f.unlink()  # 删除文件
+                    deleted_count += 1
+
+            if deleted_count > 0:
+                print(f"🗑️ 清理了 {deleted_count} 个旧checkpoint，节省存储空间")
+
+        except Exception as e:
+            print(f"⚠️ 清理checkpoint时出错: {e}")
+
+    def get_storage_info(self):
+        """获取存储空间信息"""
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage(self.output_dir)
+
+            # 计算当前输出目录大小
+            output_size = sum(f.stat().st_size for f in self.output_dir.rglob('*') if f.is_file())
+
+            print(f"💾 存储信息:")
+            print(f"   输出目录大小: {output_size / (1024**3):.2f} GB")
+            print(f"   磁盘剩余空间: {free / (1024**3):.2f} GB")
+            print(f"   磁盘使用率: {used / total * 100:.1f}%")
+
+            # 警告存储空间不足
+            if free < 5 * (1024**3):  # 少于5GB
+                print(f"⚠️ 警告: 磁盘剩余空间不足5GB!")
+
+        except Exception as e:
+            print(f"⚠️ 获取存储信息失败: {e}")
     
     def train(self):
         """主训练循环"""
         print(f"\n🎯 开始VQ-VAE训练...")
-        
+
+        # 显示存储信息
+        self.get_storage_info()
+
         # 创建数据加载器
         dataloader = self._create_dataloader()
-        
+
         best_psnr = 0
         
         for epoch in range(self.args.num_epochs):
@@ -304,23 +407,70 @@ class VQVAETrainer:
                 eval_metrics = self.evaluate(dataloader)
                 print(f"  PSNR: {eval_metrics['psnr']:.2f} dB")
                 print(f"  SSIM: {eval_metrics['ssim']:.4f}")
-                
+
                 # 保存最佳模型
                 is_best = eval_metrics['psnr'] > best_psnr
                 if is_best:
                     best_psnr = eval_metrics['psnr']
-                
-                self.save_model(epoch, is_best)
+
+                # 在评估时保存checkpoint和最佳模型
+                self.save_model(epoch, is_best, save_checkpoint=True)
+            else:
+                # 非评估epoch，检查是否需要保存里程碑
+                is_milestone = (epoch + 1) % self.args.milestone_interval == 0
+                if is_milestone:
+                    self.save_model(epoch, is_best=False, save_checkpoint=False)
             
             # 显示码本使用情况
             if (epoch + 1) % self.args.codebook_monitor_interval == 0:
-                stats = self.model.get_codebook_stats()
-                print(f"  码本使用率: {stats['usage_rate']:.3f} ({stats['active_codes']}/{stats['total_codes']})")
-                print(f"  使用熵: {stats['usage_entropy']:.3f}")
-                
+                try:
+                    stats = self.model.get_codebook_stats()
+
+                    # 主要显示epoch级别统计
+                    print(f"  📊 Epoch码本使用率: {stats['epoch_usage_rate']:.3f} ({stats['epoch_active_codes']}/{stats['total_codes']})")
+                    print(f"  📈 Epoch使用熵: {stats['epoch_entropy']:.3f}")
+                    print(f"  📊 累积码本使用率: {stats['cumulative_usage_rate']:.3f} ({stats['cumulative_active_codes']}/{stats['total_codes']})")
+                    print(f"  🔢 总更新次数: {stats['total_updates']}")
+
+                    # 坍缩警告 (基于epoch使用率)
+                    epoch_rate = stats['epoch_usage_rate']
+                    if epoch_rate < 0.1:
+                        print(f"  🚨 严重警告: Epoch码本使用率过低，可能发生坍缩!")
+                    elif epoch_rate < 0.3:
+                        print(f"  ⚠️ 注意: Epoch码本使用率较低")
+                    else:
+                        print(f"  ✅ Epoch码本使用率正常")
+
+                except Exception as e:
+                    print(f"  ❌ 码本统计获取失败: {e}")
+                    # 调试信息
+                    print(f"  🔍 调试: 模型类型 = {type(self.model)}")
+                    print(f"  🔍 调试: 是否有quantize属性 = {hasattr(self.model, 'quantize')}")
+                    if hasattr(self.model, 'quantize'):
+                        print(f"  🔍 调试: quantize类型 = {type(self.model.quantize)}")
+                        print(f"  🔍 调试: 是否有usage_count = {hasattr(self.model.quantize, 'usage_count')}")
+
+                # 坍缩警告
+                if stats['usage_rate'] < 0.1:
+                    print(f"  ⚠️ 警告: 码本使用率过低，可能发生坍缩!")
+                elif stats['usage_rate'] < 0.3:
+                    print(f"  ⚠️ 注意: 码本使用率较低")
+                else:
+                    print(f"  ✅ 码本使用率正常")
+
                 # 保存码本使用图
                 usage_plot_path = self.output_dir / f"codebook_usage_epoch_{epoch+1:03d}.png"
                 self.model.plot_codebook_usage(str(usage_plot_path))
+
+            # 损失趋势分析
+            if hasattr(self, 'loss_history'):
+                self.loss_history.append(train_metrics['total_loss'])
+                if len(self.loss_history) >= 3:
+                    recent_trend = self.loss_history[-3:]
+                    if all(recent_trend[i] < recent_trend[i+1] for i in range(len(recent_trend)-1)):
+                        print(f"  ⚠️ 警告: 损失连续上升 {recent_trend}")
+            else:
+                self.loss_history = [train_metrics['total_loss']]
         
         print(f"\n✅ VQ-VAE训练完成!")
         print(f"   最佳PSNR: {best_psnr:.2f} dB")
@@ -333,6 +483,9 @@ def main():
     parser.add_argument("--data_dir", type=str, required=True, help="数据集目录")
     parser.add_argument("--output_dir", type=str, default="outputs/vqvae", help="输出目录")
     parser.add_argument("--resolution", type=int, default=128, help="图像分辨率")
+    parser.add_argument("--interpolation", type=str, default="lanczos",
+                       choices=["lanczos", "bicubic", "bilinear", "antialias"],
+                       help="图像缩放插值方法")
     
     # 模型参数
     parser.add_argument("--codebook_size", type=int, default=1024, help="码本大小")
@@ -351,7 +504,12 @@ def main():
     parser.add_argument("--num_workers", type=int, default=4, help="数据加载器工作进程数")
     parser.add_argument("--sample_interval", type=int, default=500, help="样本保存间隔")
     parser.add_argument("--eval_interval", type=int, default=5, help="评估间隔")
-    parser.add_argument("--codebook_monitor_interval", type=int, default=10, help="码本监控间隔")
+    parser.add_argument("--codebook_monitor_interval", type=int, default=1, help="码本监控间隔")
+
+    # 存储管理参数
+    parser.add_argument("--keep_checkpoints", type=int, default=5, help="保留最近N个checkpoint")
+    parser.add_argument("--milestone_interval", type=int, default=10, help="里程碑保存间隔")
+    parser.add_argument("--auto_cleanup", action="store_true", help="自动清理旧文件")
     
     args = parser.parse_args()
     
