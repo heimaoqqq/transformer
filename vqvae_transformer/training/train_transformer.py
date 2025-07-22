@@ -51,7 +51,12 @@ class TransformerTrainer:
             weight_decay=args.weight_decay
         )
         
-        # 创建学习率调度器
+        # 创建带warmup的学习率调度器
+        self.warmup_steps = 1000  # 约2个epoch
+        self.total_steps = len(self._create_dataloaders()[0]) * args.num_epochs
+        self.current_step = 0
+
+        # 使用CosineAnnealingLR作为主调度器
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=args.num_epochs
         )
@@ -325,6 +330,28 @@ class TransformerTrainer:
 
         return model
 
+    def _update_learning_rate(self):
+        """更新学习率，包含warmup机制"""
+        self.current_step += 1
+
+        if self.current_step <= self.warmup_steps:
+            # Warmup阶段：线性增长
+            warmup_factor = self.current_step / self.warmup_steps
+            current_lr = self.args.learning_rate * warmup_factor
+
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = current_lr
+
+            if self.current_step % 200 == 0:  # 每200步打印一次
+                print(f"   Warmup步骤 {self.current_step}/{self.warmup_steps}, LR: {current_lr:.6f}")
+        else:
+            # Warmup完成后，使用cosine annealing（每个epoch调用一次）
+            if self.current_step % len(self._create_dataloaders()[0]) == 0:
+                self.scheduler.step()
+                current_lr = self.optimizer.param_groups[0]['lr']
+                if self.current_step % 1000 == 0:  # 每1000步打印一次
+                    print(f"   Cosine LR: {current_lr:.6f}")
+
     def _check_user_distribution(self, train_dataset, val_dataset, full_dataset):
         """检查训练集和验证集的用户分布"""
         print(f"👥 检查用户分布:")
@@ -571,6 +598,9 @@ class TransformerTrainer:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.transformer_model.parameters(), 1.0)
                 self.optimizer.step()
+
+                # 更新学习率（包含warmup）
+                self._update_learning_rate()
                 
                 total_loss += loss.item()
                 pbar.set_postfix({'loss': f'{loss.item():.4f}'})
@@ -579,8 +609,7 @@ class TransformerTrainer:
                 if batch_idx % 1000 == 0 and batch_idx > 0:
                     self._save_checkpoint(epoch, batch_idx, loss.item())
             
-            # 更新学习率
-            self.scheduler.step()
+            # 学习率已在每个batch后更新
             
             avg_loss = total_loss / len(train_dataloader)
             print(f"Epoch {epoch+1} 平均损失: {avg_loss:.4f}")
