@@ -29,15 +29,66 @@ def create_simple_dataset_class(data_dir):
 
             # 扫描所有图像文件
             self.samples = []
-            for user_dir in self.data_dir.iterdir():
-                if user_dir.is_dir() and user_dir.name.startswith('user_'):
+
+            print(f"🔍 扫描数据集目录: {self.data_dir}")
+
+            # 检查目录是否存在
+            if not self.data_dir.exists():
+                print(f"❌ 数据集目录不存在: {self.data_dir}")
+                return
+
+            # 列出目录内容
+            subdirs = [d for d in self.data_dir.iterdir() if d.is_dir()]
+            print(f"📁 发现子目录: {[d.name for d in subdirs[:10]]}{'...' if len(subdirs) > 10 else ''}")
+
+            # 尝试多种目录结构
+            patterns_tried = []
+
+            # 模式1: user_X 格式
+            for user_dir in subdirs:
+                if user_dir.name.startswith('user_'):
                     try:
                         user_id = int(user_dir.name.split('_')[1])
-                        for img_file in user_dir.glob('*.png'):
+                        img_files = list(user_dir.glob('*.png')) + list(user_dir.glob('*.jpg')) + list(user_dir.glob('*.jpeg'))
+                        for img_file in img_files:
                             self.samples.append((img_file, user_id))
+                        if img_files:
+                            patterns_tried.append(f"user_{user_id}: {len(img_files)}个文件")
                     except (ValueError, IndexError):
                         continue
 
+            # 模式2: 数字目录格式
+            if not self.samples:
+                for user_dir in subdirs:
+                    try:
+                        user_id = int(user_dir.name)
+                        img_files = list(user_dir.glob('*.png')) + list(user_dir.glob('*.jpg')) + list(user_dir.glob('*.jpeg'))
+                        for img_file in img_files:
+                            self.samples.append((img_file, user_id))
+                        if img_files:
+                            patterns_tried.append(f"用户{user_id}: {len(img_files)}个文件")
+                    except ValueError:
+                        continue
+
+            # 模式3: 直接在根目录查找图像
+            if not self.samples:
+                img_files = list(self.data_dir.glob('*.png')) + list(self.data_dir.glob('*.jpg')) + list(self.data_dir.glob('*.jpeg'))
+                for i, img_file in enumerate(img_files):
+                    # 尝试从文件名提取用户ID
+                    user_id = 1  # 默认用户ID
+                    try:
+                        # 尝试从文件名提取用户ID (例如: user_1_image.png)
+                        if 'user_' in img_file.stem:
+                            user_id = int(img_file.stem.split('user_')[1].split('_')[0])
+                    except:
+                        user_id = (i % 31) + 1  # 分配到31个用户中
+
+                    self.samples.append((img_file, user_id))
+
+                if img_files:
+                    patterns_tried.append(f"根目录: {len(img_files)}个文件")
+
+            print(f"📊 扫描结果: {patterns_tried}")
             print(f"📊 简化数据集: 找到 {len(self.samples)} 个样本")
 
         def __len__(self):
@@ -312,10 +363,22 @@ def evaluate_vqvae(model, dataloader, device, max_batches=20):
             total_recon_loss += recon_loss.item()
     
     # 计算平均指标
-    avg_psnr = total_psnr / num_samples
-    avg_ssim = total_ssim / num_samples
-    avg_vq_loss = total_vq_loss / min(batch_idx + 1, max_batches)
-    avg_recon_loss = total_recon_loss / min(batch_idx + 1, max_batches)
+    if num_samples > 0:
+        avg_psnr = total_psnr / num_samples
+        avg_ssim = total_ssim / num_samples
+    else:
+        avg_psnr = 0.0
+        avg_ssim = 0.0
+        print("⚠️ 没有处理任何样本，无法计算PSNR和SSIM")
+
+    num_batches = min(batch_idx + 1, max_batches) if 'batch_idx' in locals() else 0
+    if num_batches > 0:
+        avg_vq_loss = total_vq_loss / num_batches
+        avg_recon_loss = total_recon_loss / num_batches
+    else:
+        avg_vq_loss = 0.0
+        avg_recon_loss = 0.0
+        print("⚠️ 没有处理任何批次，无法计算损失")
     
     return {
         'psnr': avg_psnr,
