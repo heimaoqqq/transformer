@@ -68,16 +68,26 @@ class UserConditionEncoder(nn.Module):
         # 用户ID嵌入 - 支持用户ID从1开始
         self.user_embedding = nn.Embedding(num_users + 1, embed_dim)
         
-        # 增强的用户特征学习网络 - 专为微小差异设计
+        # 极度增强的用户特征学习网络 - 专为微小差异设计
         self.user_mlp = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * 4),  # 更大的隐藏层
+            nn.Linear(embed_dim, embed_dim * 8),  # 进一步增大隐藏层
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim * 8, embed_dim * 4),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(embed_dim * 4, embed_dim * 2),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(embed_dim * 2, embed_dim),
-            nn.LayerNorm(embed_dim),  # 添加LayerNorm稳定训练
+            nn.LayerNorm(embed_dim),
+        )
+
+        # 用户特征对比学习层 - 强化用户间差异
+        self.user_contrast_proj = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim // 2),
+            nn.GELU(),
+            nn.Linear(embed_dim // 2, embed_dim),
         )
 
         # 用户特征多头注意力 - 增强特征表达能力
@@ -114,6 +124,12 @@ class UserConditionEncoder(nn.Module):
 
         # 残差连接
         final_embeds = enhanced_embeds + attended_embeds.squeeze(1)
+
+        # 对比学习增强 - 强化用户特征的独特性
+        contrast_embeds = self.user_contrast_proj(final_embeds)
+
+        # 最终用户嵌入 = 基础嵌入 + 对比增强嵌入
+        final_embeds = final_embeds + contrast_embeds * 0.5  # 加权融合
 
         return final_embeds
 
@@ -194,8 +210,16 @@ class MicroDopplerTransformer(nn.Module):
             )
 
             # 用户特征扩展 - 从1个token扩展到多个token增强表达能力
-            self.user_expansion_factor = 4  # 扩展为4个token
+            self.user_expansion_factor = 8  # 增加到8个token以增强用户影响
             self.user_expand = nn.Linear(n_embd, n_embd * self.user_expansion_factor)
+
+            # 用户特征放大器 - 增强用户信号强度
+            self.user_amplifier = nn.Sequential(
+                nn.Linear(n_embd, n_embd),
+                nn.GELU(),
+                nn.Linear(n_embd, n_embd),
+                nn.Tanh(),  # 限制输出范围，避免梯度爆炸
+            )
         
         print(f"🤖 微多普勒Transformer初始化:")
         print(f"   模型类型: 自定义GPT2 (专为视觉token优化)")
@@ -330,11 +354,14 @@ class MicroDopplerTransformer(nn.Module):
             # 增强的交叉注意力模式：扩展用户特征表达
             projected_user_embeds = self.user_proj(user_embeds)  # [B, n_embd]
 
+            # 应用用户特征放大器
+            amplified_user_embeds = self.user_amplifier(projected_user_embeds)  # [B, n_embd]
+
             # 扩展用户特征为多个token以增强表达能力
-            expanded_user_features = self.user_expand(projected_user_embeds)  # [B, n_embd * 4]
+            expanded_user_features = self.user_expand(amplified_user_embeds)  # [B, n_embd * 8]
             expanded_user_features = expanded_user_features.view(
                 batch_size, self.user_expansion_factor, self.n_embd
-            )  # [B, 4, n_embd]
+            )  # [B, 8, n_embd]
 
             encoder_hidden_states = expanded_user_features
             encoder_attention_mask = torch.ones(batch_size, self.user_expansion_factor, device=device)
