@@ -123,22 +123,31 @@ class MicroDopplerTransformer(nn.Module):
             dropout=dropout,
         )
         
-        # 配置GPT模型
+        # 配置自定义GPT模型 - 专为VQ-VAE视觉token优化
         config = GPT2Config(
-            vocab_size=vocab_size + 1,  # +1 for special tokens
-            n_positions=max_seq_len + 1,  # +1 for user token
-            n_embd=n_embd,
-            n_layer=n_layer,
-            n_head=n_head,
-            resid_pdrop=dropout,
-            embd_pdrop=dropout,
-            attn_pdrop=dropout,
-            use_cache=False,
-            add_cross_attention=use_cross_attention,
+            vocab_size=vocab_size + 1,  # VQ-VAE码本大小(1024) + 1个特殊token
+            n_positions=max_seq_len + 1,  # 序列长度(256) + 1个用户token
+            n_embd=n_embd,  # 嵌入维度(512)
+            n_layer=n_layer,  # Transformer层数(8)
+            n_head=n_head,  # 注意力头数(8)
+            n_inner=n_embd * 4,  # FFN内部维度(2048)
+            activation_function="gelu_new",  # 使用新版GELU
+            resid_pdrop=dropout,  # 残差连接dropout
+            embd_pdrop=dropout,   # 嵌入层dropout
+            attn_pdrop=dropout,   # 注意力dropout
+            layer_norm_epsilon=1e-5,  # LayerNorm epsilon
+            initializer_range=0.02,   # 权重初始化范围
+            use_cache=False,  # 训练时不使用缓存
+            add_cross_attention=use_cross_attention,  # 是否添加交叉注意力
+            # 确保不加载预训练权重
+            _name_or_path="",
         )
         
-        # 创建GPT模型
+        # 创建自定义GPT模型（不加载预训练权重）
         self.transformer = GPT2LMHeadModel(config)
+
+        # 重新初始化权重以确保适合视觉token
+        self._init_weights()
         
         # 特殊token
         self.user_token_id = vocab_size  # 用户token ID
@@ -149,17 +158,39 @@ class MicroDopplerTransformer(nn.Module):
             self.user_proj = nn.Linear(n_embd, n_embd)
         
         print(f"🤖 微多普勒Transformer初始化:")
-        print(f"   词汇表大小: {vocab_size}")
-        print(f"   序列长度: {max_seq_len}")
+        print(f"   模型类型: 自定义GPT2 (专为视觉token优化)")
+        print(f"   词汇表大小: {vocab_size} + 1个特殊token")
+        print(f"   序列长度: {max_seq_len} + 1个用户token")
         print(f"   用户数量: {num_users}")
         print(f"   嵌入维度: {n_embd}")
         print(f"   Transformer层数: {n_layer}")
         print(f"   注意力头数: {n_head}")
         print(f"   交叉注意力: {use_cross_attention}")
+        print(f"   预训练权重: 不使用 (从头训练)")
         
         # 计算参数量
         total_params = sum(p.numel() for p in self.parameters())
         print(f"   总参数量: {total_params/1e6:.1f}M")
+
+    def _init_weights(self):
+        """初始化模型权重 - 专为视觉token优化"""
+        def _init_module(module):
+            if isinstance(module, nn.Linear):
+                # 线性层使用正态分布初始化
+                torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+                if module.bias is not None:
+                    torch.nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.Embedding):
+                # 嵌入层使用正态分布初始化
+                torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            elif isinstance(module, nn.LayerNorm):
+                # LayerNorm使用标准初始化
+                torch.nn.init.zeros_(module.bias)
+                torch.nn.init.ones_(module.weight)
+
+        # 应用初始化到所有模块
+        self.apply(_init_module)
+        print("✅ 模型权重已重新初始化（专为视觉token优化）")
     
     def prepare_inputs(
         self, 
