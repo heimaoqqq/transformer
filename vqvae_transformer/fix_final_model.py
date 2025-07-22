@@ -42,7 +42,7 @@ def fix_final_model(vqvae_dir, best_model_path=None, final_model_path=None):
     try:
         # 加载最佳模型权重
         print(f"\n正在加载最佳模型权重...")
-        checkpoint = torch.load(best_model_path, map_location='cpu')
+        checkpoint = torch.load(best_model_path, map_location='cpu', weights_only=False)
 
         if 'model_state_dict' in checkpoint:
             model_state = checkpoint['model_state_dict']
@@ -52,6 +52,9 @@ def fix_final_model(vqvae_dir, best_model_path=None, final_model_path=None):
             print(f"错误：检查点格式不正确")
             return False
 
+        # 初始化备份路径变量
+        backup_path = vqvae_path / "final_model_backup"
+
         # 如果final_model在输入目录，需要复制到输出目录
         if str(final_model_path).startswith('/kaggle/input/'):
             # 创建输出目录中的final_model
@@ -60,7 +63,6 @@ def fix_final_model(vqvae_dir, best_model_path=None, final_model_path=None):
 
             # 如果输出目录已有final_model，先备份
             if output_final_model_path.exists():
-                backup_path = vqvae_path / "final_model_backup"
                 if backup_path.exists():
                     shutil.rmtree(backup_path)
                 shutil.copytree(output_final_model_path, backup_path)
@@ -76,7 +78,6 @@ def fix_final_model(vqvae_dir, best_model_path=None, final_model_path=None):
             final_model_path = output_final_model_path
         else:
             # 备份原始final_model
-            backup_path = vqvae_path / "final_model_backup"
             if backup_path.exists():
                 shutil.rmtree(backup_path)
 
