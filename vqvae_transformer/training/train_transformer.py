@@ -222,11 +222,8 @@ class TransformerTrainer:
                     token_sequences=input_tokens
                 )
                 
-                # 计算损失
-                loss = nn.CrossEntropyLoss()(
-                    outputs.logits.reshape(-1, self.args.codebook_size),
-                    target_tokens.reshape(-1)
-                )
+                # 使用Transformer内部计算的损失
+                loss = outputs.loss
                 
                 # 反向传播
                 loss.backward()
