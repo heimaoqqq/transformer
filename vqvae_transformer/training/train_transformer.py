@@ -204,8 +204,8 @@ class TransformerTrainer:
                 
                 # 前向传播
                 outputs = self.transformer_model(
-                    input_ids=input_tokens,
-                    user_ids=user_ids
+                    user_ids=user_ids,
+                    token_sequences=input_tokens
                 )
                 
                 # 计算损失
