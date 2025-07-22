@@ -725,7 +725,7 @@ class TransformerTrainer:
                 generated = torch.full((batch_size, 1), self.transformer_model.user_token_id, device=device)
 
                 # 逐步生成
-                for _ in range(max_length):
+                for step in range(max_length):
                     # 准备输入
                     inputs = self.transformer_model.prepare_inputs(user_ids, None)
 
@@ -754,19 +754,8 @@ class TransformerTrainer:
                     if next_token_logits.shape[-1] > self.args.codebook_size:
                         next_token_logits = next_token_logits[:, :self.args.codebook_size]
 
-                    # 添加噪声防止模式崩溃
-                    if step < 10:  # 前10步添加更多随机性
-                        noise = torch.randn_like(next_token_logits) * 0.1
-                        next_token_logits = next_token_logits + noise
-
-                    # 使用top-k采样增加多样性
-                    k = min(50, next_token_logits.shape[-1])  # top-50
-                    top_k_logits, top_k_indices = torch.topk(next_token_logits, k, dim=-1)
-
-                    # 在top-k中采样
-                    probs = torch.softmax(top_k_logits, dim=-1)
-                    sampled_indices = torch.multinomial(probs, 1)
-                    next_token = torch.gather(top_k_indices, -1, sampled_indices)
+                    # 采样下一个token
+                    next_token = torch.multinomial(torch.softmax(next_token_logits, dim=-1), 1)
 
                     # 确保token在有效范围内
                     next_token = torch.clamp(next_token, 0, self.args.codebook_size - 1)
