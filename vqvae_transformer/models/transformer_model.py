@@ -159,7 +159,7 @@ class MicroDopplerTransformer(nn.Module):
         self.use_cross_attention = use_cross_attention
 
         # 确保在使用前设置扩展因子
-        self.user_expansion_factor = 4 if use_cross_attention else 1
+        self.user_expansion_factor = 8 if use_cross_attention else 1  # 统一设为8
         
         # 用户条件编码器
         self.user_encoder = UserConditionEncoder(
@@ -207,7 +207,7 @@ class MicroDopplerTransformer(nn.Module):
             )
 
             # 用户特征扩展 - 从1个token扩展到多个token增强表达能力
-            self.user_expansion_factor = 8  # 增加到8个token以增强用户影响
+            # user_expansion_factor已在上面统一设置为8
             self.user_expand = nn.Linear(n_embd, n_embd * self.user_expansion_factor)
 
             # 用户特征放大器 - 增强用户信号强度

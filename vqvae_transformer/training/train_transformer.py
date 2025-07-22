@@ -53,8 +53,8 @@ class TransformerTrainer:
         
         # 创建带warmup的学习率调度器
         self.warmup_steps = 1000  # 约2个epoch
-        self.total_steps = len(self._create_dataloaders()[0]) * args.num_epochs
         self.current_step = 0
+        # total_steps将在train()方法中计算
 
         # 使用CosineAnnealingLR作为主调度器
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -177,7 +177,7 @@ class TransformerTrainer:
             print(f"   标签形状: {inputs_dict['labels'].shape}")
 
             if inputs_dict['encoder_hidden_states'] is not None:
-                print(f"   交叉注意力状态形状: {inputs_dict['encoder_hidden_states'].shape} (应该是[2, 4, 512])")
+                print(f"   交叉注意力状态形状: {inputs_dict['encoder_hidden_states'].shape} (应该是[2, 8, 512])")
                 print(f"   注意力掩码形状: {inputs_dict['encoder_attention_mask'].shape}")
             else:
                 print(f"   交叉注意力: 未使用")
@@ -345,12 +345,9 @@ class TransformerTrainer:
             if self.current_step % 200 == 0:  # 每200步打印一次
                 print(f"   Warmup步骤 {self.current_step}/{self.warmup_steps}, LR: {current_lr:.6f}")
         else:
-            # Warmup完成后，使用cosine annealing（每个epoch调用一次）
-            if self.current_step % len(self._create_dataloaders()[0]) == 0:
-                self.scheduler.step()
-                current_lr = self.optimizer.param_groups[0]['lr']
-                if self.current_step % 1000 == 0:  # 每1000步打印一次
-                    print(f"   Cosine LR: {current_lr:.6f}")
+            # Warmup完成后，使用cosine annealing
+            # 简化：每个epoch结束时调用scheduler.step()
+            pass  # scheduler.step()将在epoch结束时调用
 
     def _check_user_distribution(self, train_dataset, val_dataset, full_dataset):
         """检查训练集和验证集的用户分布"""
@@ -609,8 +606,12 @@ class TransformerTrainer:
                 if batch_idx % 1000 == 0 and batch_idx > 0:
                     self._save_checkpoint(epoch, batch_idx, loss.item())
             
-            # 学习率已在每个batch后更新
-            
+            # Warmup完成后，每个epoch结束时更新cosine scheduler
+            if self.current_step > self.warmup_steps:
+                self.scheduler.step()
+                current_lr = self.optimizer.param_groups[0]['lr']
+                print(f"   Cosine LR: {current_lr:.6f}")
+
             avg_loss = total_loss / len(train_dataloader)
             print(f"Epoch {epoch+1} 平均损失: {avg_loss:.4f}")
 
