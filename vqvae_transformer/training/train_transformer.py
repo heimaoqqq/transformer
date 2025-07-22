@@ -190,20 +190,39 @@ class TransformerTrainer:
                 images = images.to(self.device)
                 user_ids = user_ids.to(self.device)
 
-                # 用户ID范围[1,31]直接使用，嵌入层已调整为支持这个范围
+                # 检查用户ID范围
+                min_user_id = user_ids.min().item()
+                max_user_id = user_ids.max().item()
+                print(f"🔍 用户ID调试信息:")
+                print(f"   用户ID范围: [{min_user_id}, {max_user_id}]")
+                print(f"   用户嵌入层大小: {self.transformer_model.user_encoder.num_users + 1}")
+
+                if min_user_id < 1 or max_user_id > 31:
+                    print(f"❌ 用户ID超出预期范围[1,31]，跳过此批次")
+                    continue
                 
                 # 使用VQ-VAE编码图像为token序列
                 with torch.no_grad():
                     encoded = self.vqvae_model.encode(images, return_dict=True)
                     tokens = encoded['encoding_indices']  # [B, H, W] - VQ-VAE输出的2D token map
 
-                    # 检查token值范围
+                    # 详细检查token值
                     min_token = tokens.min().item()
                     max_token = tokens.max().item()
-                    if min_token < 0 or max_token >= self.args.codebook_size:
-                        print(f"❌ Token值超出范围: [{min_token}, {max_token}], 词汇表大小: {self.args.codebook_size}")
-                        print(f"   Token形状: {tokens.shape}")
-                        continue  # 跳过这个批次
+                    has_nan = torch.isnan(tokens).any().item()
+                    has_inf = torch.isinf(tokens).any().item()
+
+                    print(f"🔍 Token调试信息:")
+                    print(f"   Token形状: {tokens.shape}")
+                    print(f"   Token范围: [{min_token}, {max_token}]")
+                    print(f"   词汇表大小: {self.args.codebook_size}")
+                    print(f"   包含NaN: {has_nan}")
+                    print(f"   包含Inf: {has_inf}")
+                    print(f"   Token数据类型: {tokens.dtype}")
+
+                    if min_token < 0 or max_token >= self.args.codebook_size or has_nan or has_inf:
+                        print(f"❌ Token数据异常，跳过此批次")
+                        continue
 
                     # 展平为序列 [B, H*W] - 对于128x128图像，8倍下采样后是16x16=256
                     batch_size = tokens.shape[0]
@@ -216,7 +235,20 @@ class TransformerTrainer:
                 input_tokens = tokens[:, :-1]  # 除了最后一个token
                 target_tokens = tokens[:, 1:]  # 除了第一个token
                 
+                # 检查输入序列
+                min_input = input_tokens.min().item()
+                max_input = input_tokens.max().item()
+                print(f"🔍 输入序列调试信息:")
+                print(f"   输入序列形状: {input_tokens.shape}")
+                print(f"   输入序列范围: [{min_input}, {max_input}]")
+                print(f"   Transformer词汇表大小: {self.transformer_model.transformer.config.vocab_size}")
+
+                if max_input >= self.transformer_model.transformer.config.vocab_size:
+                    print(f"❌ 输入序列超出Transformer词汇表范围，跳过此批次")
+                    continue
+
                 # 前向传播
+                print(f"🚀 开始Transformer前向传播...")
                 outputs = self.transformer_model(
                     user_ids=user_ids,
                     token_sequences=input_tokens
