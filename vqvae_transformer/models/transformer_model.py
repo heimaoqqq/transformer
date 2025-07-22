@@ -191,13 +191,10 @@ class MicroDopplerTransformer(nn.Module):
         # 创建自定义GPT模型（不加载预训练权重）
         self.transformer = GPT2LMHeadModel(config)
 
-        # 重新初始化权重以确保适合视觉token
-        self._init_weights()
-        
         # 特殊token
         self.user_token_id = vocab_size  # 用户token ID
         self.pad_token_id = vocab_size   # padding token
-        
+
         # 增强的交叉注意力机制
         if use_cross_attention:
             # 多层用户特征投影，增强用户信息表达
@@ -255,6 +252,10 @@ class MicroDopplerTransformer(nn.Module):
         print(f"      用户扩展层: {user_expand_params/1e6:.2f}M")
         print(f"      总参数量: {total_params/1e6:.1f}M")
 
+        # 在所有层定义完成后，重新初始化权重并验证
+        self._init_weights()
+        self._verify_enhancements()
+
     def _init_weights(self):
         """初始化模型权重 - 专为视觉token优化"""
         def _init_module(module):
@@ -274,9 +275,6 @@ class MicroDopplerTransformer(nn.Module):
         # 应用初始化到所有模块
         self.apply(_init_module)
         print("✅ 模型权重已重新初始化（专为视觉token优化）")
-
-        # 验证增强功能是否正确启用
-        self._verify_enhancements()
 
     def _verify_enhancements(self):
         """验证增强功能是否正确启用"""
