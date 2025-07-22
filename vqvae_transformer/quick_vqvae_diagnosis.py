@@ -207,26 +207,40 @@ def evaluate_vqvae(model, dataloader, device, max_batches=20):
 
 def main():
     """主函数"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="VQ-VAE快速质量诊断")
+    parser.add_argument("--vqvae_path", type=str, default="/kaggle/input/best-model",
+                       help="VQ-VAE模型路径")
+    parser.add_argument("--data_dir", type=str, default="/kaggle/input/dataset",
+                       help="数据集路径")
+    parser.add_argument("--max_batches", type=int, default=20,
+                       help="最大评估批次数")
+    parser.add_argument("--batch_size", type=int, default=8,
+                       help="批次大小")
+
+    args = parser.parse_args()
+
     print("🔬 VQ-VAE快速质量诊断")
     print("=" * 50)
-    
-    # 配置
-    vqvae_path = "/kaggle/input/best-model"  # 或者您的VQ-VAE模型路径
-    data_dir = "/kaggle/input/dataset"
+    print(f"📂 VQ-VAE路径: {args.vqvae_path}")
+    print(f"📂 数据集路径: {args.data_dir}")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"🖥️ 使用设备: {device}")
     
     try:
         # 1. 加载模型
         print(f"📂 加载VQ-VAE模型...")
-        model = load_vqvae_model(vqvae_path)
-        
+        model = load_vqvae_model(args.vqvae_path)
+
         # 2. 创建验证数据加载器
         print(f"📊 创建验证数据加载器...")
-        val_dataloader = create_validation_dataloader(data_dir)
-        
+        val_dataloader = create_validation_dataloader(args.data_dir, args.batch_size)
+
         # 3. 评估模型
         print(f"🎯 开始评估...")
-        metrics = evaluate_vqvae(model, val_dataloader, device)
+        metrics = evaluate_vqvae(model, val_dataloader, device, args.max_batches)
         
         # 4. 显示结果
         print(f"\n📊 VQ-VAE验证集性能:")
