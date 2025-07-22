@@ -748,8 +748,16 @@ class TransformerTrainer:
                     # 获取下一个token的logits
                     next_token_logits = outputs.logits[:, -1, :] / self.args.generation_temperature
 
+                    # 限制logits到有效的token范围 [0, codebook_size-1]
+                    # 将超出范围的logits设为很小的值
+                    if next_token_logits.shape[-1] > self.args.codebook_size:
+                        next_token_logits = next_token_logits[:, :self.args.codebook_size]
+
                     # 采样下一个token
                     next_token = torch.multinomial(torch.softmax(next_token_logits, dim=-1), 1)
+
+                    # 确保token在有效范围内
+                    next_token = torch.clamp(next_token, 0, self.args.codebook_size - 1)
 
                     # 添加到生成序列
                     generated = torch.cat([generated, next_token], dim=1)
@@ -784,12 +792,28 @@ class TransformerTrainer:
                 if tokens.dtype != torch.long:
                     tokens = tokens.long()
 
-                # 检查token值范围
+                # 检查和修复token值范围
+                min_token = tokens.min().item()
+                max_token = tokens.max().item()
+
+                # 过滤掉特殊token（用户token ID = codebook_size）
+                special_token_mask = tokens >= self.args.codebook_size
+                if special_token_mask.any():
+                    print(f"⚠️ 发现{special_token_mask.sum().item()}个特殊token，将替换为随机有效token")
+                    # 将特殊token替换为随机的有效token
+                    random_tokens = torch.randint(0, self.args.codebook_size,
+                                                 special_token_mask.shape,
+                                                 device=tokens.device)
+                    tokens = torch.where(special_token_mask, random_tokens, tokens)
+
+                # 再次检查范围
                 min_token = tokens.min().item()
                 max_token = tokens.max().item()
                 if min_token < 0 or max_token >= self.args.codebook_size:
-                    print(f"⚠️ Token值超出范围: [{min_token}, {max_token}]")
+                    print(f"⚠️ Token值仍超出范围: [{min_token}, {max_token}]")
                     return None
+
+                print(f"✅ Token范围正常: [{min_token}, {max_token}]")
 
                 # 重塑为2D token map
                 batch_size = tokens.shape[0]
