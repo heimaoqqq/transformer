@@ -150,6 +150,8 @@ class TransformerTrainer:
         # 测试增强功能是否工作
         self._test_enhanced_features(model)
 
+        return model
+
     def _test_enhanced_features(self, model):
         """测试增强功能是否正确工作"""
         print(f"🧪 测试增强功能:")
