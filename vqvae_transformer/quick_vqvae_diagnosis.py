@@ -19,43 +19,92 @@ sys.path.append(str(Path(__file__).parent))
 def load_vqvae_model(model_path):
     """加载VQ-VAE模型"""
     model_path = Path(model_path)
-    
-    # 尝试加载final_model
-    final_model_path = model_path / "final_model"
-    if final_model_path.exists():
-        print(f"📂 加载final_model: {final_model_path}")
+
+    # 如果传入的是.pth文件路径，直接处理
+    if str(model_path).endswith('.pth') and model_path.exists():
+        print(f"📂 加载checkpoint文件: {model_path}")
         try:
+            checkpoint = torch.load(model_path, map_location='cpu')
             from models.vqvae_model import MicroDopplerVQVAE
-            model = MicroDopplerVQVAE.from_pretrained(final_model_path)
-            print("✅ 成功加载final_model")
-            return model
-        except Exception as e:
-            print(f"⚠️ final_model加载失败: {e}")
-    
-    # 尝试加载best_model.pth
-    best_model_path = model_path / "best_model.pth"
-    if best_model_path.exists():
-        print(f"📂 加载best_model: {best_model_path}")
-        try:
-            checkpoint = torch.load(best_model_path, map_location='cpu')
-            from models.vqvae_model import MicroDopplerVQVAE
-            
+
             model = MicroDopplerVQVAE(
                 num_vq_embeddings=checkpoint['args'].codebook_size,
                 commitment_cost=checkpoint['args'].commitment_cost,
                 ema_decay=getattr(checkpoint['args'], 'ema_decay', 0.99),
             )
             model.load_state_dict(checkpoint['model_state_dict'])
-            print("✅ 成功加载best_model")
+            print("✅ 成功加载checkpoint文件")
             return model
         except Exception as e:
-            print(f"⚠️ best_model加载失败: {e}")
-    
+            print(f"⚠️ checkpoint文件加载失败: {e}")
+
+    # 如果是目录，尝试不同的加载方式
+    if model_path.is_dir():
+        # 1. 尝试直接作为diffusers模型加载
+        if (model_path / "config.json").exists():
+            print(f"📂 检测到diffusers格式: {model_path}")
+            try:
+                from models.vqvae_model import MicroDopplerVQVAE
+                model = MicroDopplerVQVAE.from_pretrained(model_path)
+                print("✅ 成功加载diffusers格式模型")
+                return model
+            except Exception as e:
+                print(f"⚠️ diffusers格式加载失败: {e}")
+
+        # 2. 尝试加载final_model子目录
+        final_model_path = model_path / "final_model"
+        if final_model_path.exists():
+            print(f"📂 加载final_model: {final_model_path}")
+            try:
+                from models.vqvae_model import MicroDopplerVQVAE
+                model = MicroDopplerVQVAE.from_pretrained(final_model_path)
+                print("✅ 成功加载final_model")
+                return model
+            except Exception as e:
+                print(f"⚠️ final_model加载失败: {e}")
+
+        # 3. 尝试加载best_model.pth
+        best_model_path = model_path / "best_model.pth"
+        if best_model_path.exists():
+            print(f"📂 加载best_model: {best_model_path}")
+            try:
+                checkpoint = torch.load(best_model_path, map_location='cpu')
+                from models.vqvae_model import MicroDopplerVQVAE
+
+                model = MicroDopplerVQVAE(
+                    num_vq_embeddings=checkpoint['args'].codebook_size,
+                    commitment_cost=checkpoint['args'].commitment_cost,
+                    ema_decay=getattr(checkpoint['args'], 'ema_decay', 0.99),
+                )
+                model.load_state_dict(checkpoint['model_state_dict'])
+                print("✅ 成功加载best_model")
+                return model
+            except Exception as e:
+                print(f"⚠️ best_model加载失败: {e}")
+
+    # 列出可用文件帮助调试
+    if model_path.exists():
+        if model_path.is_dir():
+            files = list(model_path.glob("*"))
+            print(f"📁 目录内容: {[f.name for f in files]}")
+        else:
+            print(f"📄 文件存在但无法加载: {model_path}")
+    else:
+        print(f"❌ 路径不存在: {model_path}")
+
     raise FileNotFoundError(f"未找到可用的VQ-VAE模型文件在 {model_path}")
 
 def create_validation_dataloader(data_dir, batch_size=8):
     """创建验证数据加载器（使用与训练相同的分层划分）"""
-    from data.micro_doppler_dataset import MicroDopplerDataset
+    try:
+        from data.micro_doppler_dataset import MicroDopplerDataset
+    except ImportError:
+        # 尝试其他可能的导入路径
+        try:
+            from vqvae_transformer.data.micro_doppler_dataset import MicroDopplerDataset
+        except ImportError:
+            print("❌ 无法导入MicroDopplerDataset，请检查路径")
+            raise
     
     # 创建变换
     transform = transforms.Compose([
