@@ -179,6 +179,126 @@ class TransformerTrainer:
 
         print(f"✅ 增强功能测试完成")
 
+        # 性能基准测试
+        self._benchmark_performance(model)
+
+    def _benchmark_performance(self, model):
+        """性能基准测试 - 验证增强功能的实际影响"""
+        print(f"⚡ 性能基准测试:")
+
+        import time
+        import torch.profiler
+
+        # 创建测试数据
+        test_user_ids = torch.tensor([1, 2, 3, 4], device=self.device)
+        test_tokens = torch.randint(0, 1024, (4, 1024), device=self.device)
+
+        # 预热GPU
+        for _ in range(3):
+            with torch.no_grad():
+                _ = model(test_user_ids, test_tokens)
+
+        torch.cuda.synchronize()
+
+        # 测试前向传播时间
+        num_runs = 10
+        start_time = time.time()
+
+        for _ in range(num_runs):
+            with torch.no_grad():
+                outputs = model(test_user_ids, test_tokens)
+
+        torch.cuda.synchronize()
+        end_time = time.time()
+
+        avg_time = (end_time - start_time) / num_runs
+
+        # 测试显存使用
+        torch.cuda.empty_cache()
+        initial_memory = torch.cuda.memory_allocated(self.device)
+
+        outputs = model(test_user_ids, test_tokens)
+        peak_memory = torch.cuda.max_memory_allocated(self.device)
+
+        memory_used = (peak_memory - initial_memory) / 1024**2  # MB
+
+        print(f"   前向传播时间: {avg_time*1000:.2f}ms")
+        print(f"   显存使用: {memory_used:.1f}MB")
+        print(f"   输出损失: {outputs.loss.item():.4f}")
+
+        # 验证交叉注意力是否真正使用
+        self._verify_cross_attention_usage(model, test_user_ids, test_tokens)
+
+    def _verify_cross_attention_usage(self, model, test_user_ids, test_tokens):
+        """验证交叉注意力是否真正被使用"""
+        print(f"🔍 验证交叉注意力使用:")
+
+        # 准备输入
+        inputs = model.prepare_inputs(test_user_ids, test_tokens)
+
+        # 检查是否有encoder_hidden_states
+        has_encoder_states = inputs['encoder_hidden_states'] is not None
+        print(f"   encoder_hidden_states存在: {'✅' if has_encoder_states else '❌'}")
+
+        if has_encoder_states:
+            encoder_shape = inputs['encoder_hidden_states'].shape
+            print(f"   encoder状态形状: {encoder_shape}")
+
+            # 验证GPT2是否真正使用交叉注意力
+            # 通过hook监控交叉注意力层的激活
+            cross_attn_activations = []
+
+            def hook_fn(module, input, output):
+                cross_attn_activations.append(output[0].shape if isinstance(output, tuple) else output.shape)
+
+            # 注册hook到GPT2的交叉注意力层
+            hooks = []
+            for name, module in model.transformer.transformer.h[0].named_modules():
+                if 'crossattention' in name.lower():
+                    hook = module.register_forward_hook(hook_fn)
+                    hooks.append(hook)
+
+            # 执行前向传播
+            with torch.no_grad():
+                _ = model.transformer(
+                    input_ids=inputs['input_ids'],
+                    attention_mask=inputs['attention_mask'],
+                    encoder_hidden_states=inputs['encoder_hidden_states'],
+                    encoder_attention_mask=inputs['encoder_attention_mask'],
+                    labels=inputs['labels'],
+                )
+
+            # 清理hooks
+            for hook in hooks:
+                hook.remove()
+
+            if cross_attn_activations:
+                print(f"   交叉注意力激活: ✅ {len(cross_attn_activations)}层")
+                print(f"   激活形状: {cross_attn_activations[0] if cross_attn_activations else 'N/A'}")
+            else:
+                print(f"   交叉注意力激活: ❌ 未检测到")
+
+        # 对比有无用户条件的输出差异
+        print(f"🔬 用户条件影响测试:")
+
+        # 相同用户的输出
+        same_user_ids = torch.tensor([1, 1, 1, 1], device=self.device)
+        with torch.no_grad():
+            same_outputs = model(same_user_ids, test_tokens)
+
+        # 不同用户的输出
+        diff_user_ids = torch.tensor([1, 10, 20, 30], device=self.device)
+        with torch.no_grad():
+            diff_outputs = model(diff_user_ids, test_tokens)
+
+        # 计算输出差异
+        same_logits_std = same_outputs.logits.std().item()
+        diff_logits_std = diff_outputs.logits.std().item()
+
+        print(f"   相同用户输出标准差: {same_logits_std:.4f}")
+        print(f"   不同用户输出标准差: {diff_logits_std:.4f}")
+        print(f"   用户条件影响: {'✅显著' if diff_logits_std > same_logits_std * 1.1 else '❌微弱'}")
+
         return model
         
     def train(self):
