@@ -414,7 +414,7 @@ def main():
                        help="VQ-VAE模型路径")
     parser.add_argument("--data_dir", type=str, default="/kaggle/input/dataset",
                        help="数据集路径")
-    parser.add_argument("--max_batches", type=int, default=20,
+    parser.add_argument("--max_batches", type=int, default=129,
                        help="最大评估批次数")
     parser.add_argument("--batch_size", type=int, default=8,
                        help="批次大小")
