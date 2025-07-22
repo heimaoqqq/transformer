@@ -129,7 +129,7 @@ class TransformerTrainer:
         """创建Transformer模型"""
         model = MicroDopplerTransformer(
             vocab_size=self.args.codebook_size,
-            max_seq_len=self.args.resolution * self.args.resolution // 16,  # 假设16倍下采样
+            max_seq_len=self.args.resolution * self.args.resolution // 64,  # VQ-VAE使用8倍下采样: (128//8)^2 = 16^2 = 256
             num_users=self.args.num_users,
             n_embd=self.args.n_embd,
             n_layer=self.args.n_layer,
@@ -194,8 +194,12 @@ class TransformerTrainer:
                 
                 # 使用VQ-VAE编码图像为token序列
                 with torch.no_grad():
-                    encoded = self.vqvae_model.encode(images)
-                    tokens = encoded['encoding_indices']  # [B, H*W]
+                    encoded = self.vqvae_model.encode(images, return_dict=True)
+                    tokens = encoded['encoding_indices']  # [B, H, W] - VQ-VAE输出的2D token map
+
+                    # 展平为序列 [B, H*W] - 对于128x128图像，8倍下采样后是16x16=256
+                    batch_size = tokens.shape[0]
+                    tokens = tokens.view(batch_size, -1)  # [B, 256]
                 
                 # Transformer训练
                 self.optimizer.zero_grad()
