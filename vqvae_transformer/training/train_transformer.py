@@ -197,6 +197,14 @@ class TransformerTrainer:
                     encoded = self.vqvae_model.encode(images, return_dict=True)
                     tokens = encoded['encoding_indices']  # [B, H, W] - VQ-VAE输出的2D token map
 
+                    # 检查token值范围
+                    min_token = tokens.min().item()
+                    max_token = tokens.max().item()
+                    if min_token < 0 or max_token >= self.args.codebook_size:
+                        print(f"❌ Token值超出范围: [{min_token}, {max_token}], 词汇表大小: {self.args.codebook_size}")
+                        print(f"   Token形状: {tokens.shape}")
+                        continue  # 跳过这个批次
+
                     # 展平为序列 [B, H*W] - 对于128x128图像，8倍下采样后是16x16=256
                     batch_size = tokens.shape[0]
                     tokens = tokens.view(batch_size, -1)  # [B, 256]
