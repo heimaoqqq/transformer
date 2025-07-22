@@ -294,18 +294,41 @@ class MicroDopplerTransformer(nn.Module):
         if self.use_cross_attention:
             # 通过参数量来验证（更可靠的方法）
             try:
-                proj_params = sum(p.numel() for p in self.user_proj.parameters())
-                expand_params = sum(p.numel() for p in self.user_expand.parameters())
+                # 检查用户投影层
+                if hasattr(self, 'user_proj') and self.user_proj is not None:
+                    proj_params = sum(p.numel() for p in self.user_proj.parameters())
+                    has_user_proj = proj_params > 0
+                    print(f"   增强用户投影: {'✅启用' if has_user_proj else '❌未启用'} ({proj_params:,}参数)")
+                else:
+                    print(f"   增强用户投影: ❌未启用 (属性不存在)")
 
-                has_user_proj = proj_params > 0
-                has_user_expand = expand_params > 0
+                # 检查用户扩展层
+                if hasattr(self, 'user_expand') and self.user_expand is not None:
+                    expand_params = sum(p.numel() for p in self.user_expand.parameters())
+                    has_user_expand = expand_params > 0
+                    print(f"   用户特征扩展: {'✅启用' if has_user_expand else '❌未启用'} ({expand_params:,}参数)")
+                else:
+                    print(f"   用户特征扩展: ❌未启用 (属性不存在)")
 
-                print(f"   增强用户投影: {'✅启用' if has_user_proj else '❌未启用'} ({proj_params:,}参数)")
-                print(f"   用户特征扩展: {'✅启用' if has_user_expand else '❌未启用'} ({expand_params:,}参数)")
-                print(f"   扩展因子: {self.user_expansion_factor}")
-            except AttributeError:
-                print(f"   增强用户投影: ❌未启用 (属性不存在)")
-                print(f"   用户特征扩展: ❌未启用 (属性不存在)")
+                # 检查用户放大器
+                if hasattr(self, 'user_amplifier') and self.user_amplifier is not None:
+                    amplifier_params = sum(p.numel() for p in self.user_amplifier.parameters())
+                    print(f"   用户特征放大器: ✅启用 ({amplifier_params:,}参数)")
+                else:
+                    print(f"   用户特征放大器: ❌未启用")
+
+                # 检查缩放因子
+                if hasattr(self, 'user_scale_factor') and self.user_scale_factor is not None:
+                    print(f"   用户缩放因子: ✅启用 (值: {self.user_scale_factor.item():.4f})")
+                else:
+                    print(f"   用户缩放因子: ❌未启用")
+
+                print(f"   扩展因子: {getattr(self, 'user_expansion_factor', 'N/A')}")
+
+            except Exception as e:
+                print(f"   验证过程出错: {e}")
+                # 备用验证：直接列出所有属性
+                print(f"   模型属性: {[attr for attr in dir(self) if 'user' in attr.lower()]}")
 
         # 检查GPT2交叉注意力
         gpt2_has_cross_attn = self.transformer.config.add_cross_attention
