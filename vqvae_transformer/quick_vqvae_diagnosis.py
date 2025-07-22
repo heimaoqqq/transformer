@@ -16,6 +16,49 @@ from torch.utils.data import DataLoader
 # 添加项目路径
 sys.path.append(str(Path(__file__).parent))
 
+def create_simple_dataset_class(data_dir):
+    """创建简化的数据集类"""
+    from PIL import Image
+    import os
+
+    class SimpleMicroDopplerDataset(torch.utils.data.Dataset):
+        def __init__(self, data_dir, transform=None, return_user_id=True):
+            self.data_dir = Path(data_dir)
+            self.transform = transform
+            self.return_user_id = return_user_id
+
+            # 扫描所有图像文件
+            self.samples = []
+            for user_dir in self.data_dir.iterdir():
+                if user_dir.is_dir() and user_dir.name.startswith('user_'):
+                    try:
+                        user_id = int(user_dir.name.split('_')[1])
+                        for img_file in user_dir.glob('*.png'):
+                            self.samples.append((img_file, user_id))
+                    except (ValueError, IndexError):
+                        continue
+
+            print(f"📊 简化数据集: 找到 {len(self.samples)} 个样本")
+
+        def __len__(self):
+            return len(self.samples)
+
+        def __getitem__(self, idx):
+            img_path, user_id = self.samples[idx]
+
+            # 加载图像
+            image = Image.open(img_path).convert('RGB')
+
+            if self.transform:
+                image = self.transform(image)
+
+            if self.return_user_id:
+                return image, torch.tensor(user_id, dtype=torch.long)
+            else:
+                return image
+
+    return SimpleMicroDopplerDataset
+
 def load_vqvae_model(model_path):
     """加载VQ-VAE模型"""
     model_path = Path(model_path)
@@ -96,15 +139,43 @@ def load_vqvae_model(model_path):
 
 def create_validation_dataloader(data_dir, batch_size=8):
     """创建验证数据加载器（使用与训练相同的分层划分）"""
-    try:
-        from data.micro_doppler_dataset import MicroDopplerDataset
-    except ImportError:
-        # 尝试其他可能的导入路径
+    # 尝试多种导入路径
+    dataset_class = None
+    import_errors = []
+
+    # 导入路径列表
+    import_paths = [
+        "data.micro_doppler_dataset",
+        "vqvae_transformer.data.micro_doppler_dataset",
+        "micro_doppler_dataset",
+    ]
+
+    for import_path in import_paths:
         try:
-            from vqvae_transformer.data.micro_doppler_dataset import MicroDopplerDataset
-        except ImportError:
-            print("❌ 无法导入MicroDopplerDataset，请检查路径")
-            raise
+            if import_path == "data.micro_doppler_dataset":
+                from data.micro_doppler_dataset import MicroDopplerDataset
+            elif import_path == "vqvae_transformer.data.micro_doppler_dataset":
+                from vqvae_transformer.data.micro_doppler_dataset import MicroDopplerDataset
+            elif import_path == "micro_doppler_dataset":
+                from micro_doppler_dataset import MicroDopplerDataset
+
+            dataset_class = MicroDopplerDataset
+            print(f"✅ 成功导入MicroDopplerDataset from {import_path}")
+            break
+        except ImportError as e:
+            import_errors.append(f"{import_path}: {e}")
+            continue
+
+    if dataset_class is None:
+        print("❌ 无法导入MicroDopplerDataset，尝试的路径:")
+        for error in import_errors:
+            print(f"   {error}")
+
+        # 创建一个简化的数据集类作为备用
+        print("🔄 使用简化的数据集实现...")
+        dataset_class = create_simple_dataset_class(data_dir)
+
+    MicroDopplerDataset = dataset_class
     
     # 创建变换
     transform = transforms.Compose([
