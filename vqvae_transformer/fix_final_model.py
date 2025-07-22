@@ -9,12 +9,15 @@ import shutil
 from pathlib import Path
 import argparse
 
-def fix_final_model(vqvae_dir):
+def fix_final_model(vqvae_dir, best_model_path=None):
     """用best_model.pth权重替换final_model"""
     vqvae_path = Path(vqvae_dir)
 
     # 检查文件是否存在
-    best_model_path = vqvae_path / "best_model.pth"
+    if best_model_path:
+        best_model_path = Path(best_model_path)
+    else:
+        best_model_path = vqvae_path / "best_model.pth"
     final_model_path = vqvae_path / "final_model"
 
     if not best_model_path.exists():
@@ -97,6 +100,9 @@ def main():
     parser.add_argument("--vqvae_dir", type=str,
                        default="/kaggle/working/outputs/vqvae_transformer/vqvae",
                        help="VQ-VAE输出目录")
+    parser.add_argument("--best_model_path", type=str,
+                       default=None,
+                       help="best_model.pth文件的自定义路径")
 
     args = parser.parse_args()
 
@@ -104,8 +110,10 @@ def main():
     print("=" * 50)
     print("目标：用最佳模型权重替换可能过拟合的final_model")
     print(f"VQ-VAE目录：{args.vqvae_dir}")
+    if args.best_model_path:
+        print(f"最佳模型路径：{args.best_model_path}")
 
-    success = fix_final_model(args.vqvae_dir)
+    success = fix_final_model(args.vqvae_dir, args.best_model_path)
 
     if success:
         print("\n修复完成！")
