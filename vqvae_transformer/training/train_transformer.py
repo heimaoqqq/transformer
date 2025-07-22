@@ -182,6 +182,8 @@ class TransformerTrainer:
         # 性能基准测试
         self._benchmark_performance(model)
 
+        return model
+
     def _benchmark_performance(self, model):
         """性能基准测试 - 验证增强功能的实际影响"""
         print(f"⚡ 性能基准测试:")
@@ -328,6 +330,8 @@ class TransformerTrainer:
         print(f"\n🚀 开始Transformer训练")
         print(f"   训练轮数: {self.args.num_epochs}")
         print(f"   学习率: {self.args.learning_rate}")
+        print(f"   评估间隔: 每5个epoch")
+        print(f"   可视化生成: 每5个epoch")
         
         # 创建图像变换 - 转换为张量
         from torchvision import transforms
@@ -353,6 +357,7 @@ class TransformerTrainer:
         )
         
         best_loss = float('inf')
+        best_psnr = 0.0
         
         for epoch in range(self.args.num_epochs):
             self.transformer_model.train()
@@ -407,8 +412,8 @@ class TransformerTrainer:
                 total_loss += loss.item()
                 pbar.set_postfix({'loss': f'{loss.item():.4f}'})
                 
-                # 定期保存
-                if batch_idx % 500 == 0:
+                # 定期保存checkpoint（减少频率）
+                if batch_idx % 1000 == 0 and batch_idx > 0:
                     self._save_checkpoint(epoch, batch_idx, loss.item())
             
             # 更新学习率
@@ -416,15 +421,35 @@ class TransformerTrainer:
             
             avg_loss = total_loss / len(dataloader)
             print(f"Epoch {epoch+1} 平均损失: {avg_loss:.4f}")
-            
-            # 保存最佳模型
+
+            # 每5个epoch进行评估和可视化
+            if (epoch + 1) % 5 == 0:
+                print(f"\n📊 第{epoch+1}轮评估:")
+
+                # 评估模型
+                eval_metrics = self.evaluate(dataloader)
+                print(f"   验证损失: {eval_metrics['loss']:.4f}")
+                print(f"   PSNR: {eval_metrics['psnr']:.2f} dB")
+                print(f"   评估样本数: {eval_metrics['num_samples']}")
+
+                # 生成可视化样本
+                self.generate_and_save_samples(epoch)
+
+                # 保存最佳PSNR模型
+                if eval_metrics['psnr'] > best_psnr:
+                    best_psnr = eval_metrics['psnr']
+                    self._save_best_model(epoch, eval_metrics['psnr'], eval_metrics['loss'])
+
+                print()  # 空行分隔
+
+            # 保存基于训练损失的最佳模型（备用）
             if avg_loss < best_loss:
                 best_loss = avg_loss
-                self._save_model("best_model.pth", epoch, avg_loss)
         
         # 保存最终模型
         self._save_model("final_model.pth", self.args.num_epochs-1, avg_loss)
         print(f"✅ Transformer训练完成")
+        print(f"🏆 最佳PSNR: {best_psnr:.2f} dB")
         
     def _save_checkpoint(self, epoch, batch_idx, loss):
         """保存训练检查点"""
@@ -455,6 +480,286 @@ class TransformerTrainer:
         model_path = self.output_dir / filename
         torch.save(model_data, model_path)
         print(f"💾 模型已保存: {model_path}")
+
+    def evaluate(self, dataloader):
+        """评估模型性能"""
+        self.transformer_model.eval()
+        total_loss = 0.0
+        num_batches = 0
+
+        # 用于计算PSNR的样本
+        original_images = []
+        generated_images = []
+
+        print("🔍 开始模型评估...")
+
+        with torch.no_grad():
+            for batch_idx, (images, user_ids) in enumerate(dataloader):
+                if batch_idx >= 50:  # 限制评估样本数量
+                    break
+
+                images = images.to(self.device)
+                user_ids = user_ids.to(self.device)
+
+                # 检查token值范围
+                encoded = self.vqvae_model.encode(images, return_dict=True)
+                tokens = encoded['encoding_indices']
+
+                min_token = tokens.min().item()
+                max_token = tokens.max().item()
+                if min_token < 0 or max_token >= self.args.codebook_size:
+                    continue
+
+                # 展平tokens
+                batch_size = tokens.shape[0]
+                tokens = tokens.view(batch_size, -1)
+                input_tokens = tokens
+
+                # 计算损失
+                outputs = self.transformer_model(
+                    user_ids=user_ids,
+                    token_sequences=input_tokens
+                )
+
+                total_loss += outputs.loss.item()
+                num_batches += 1
+
+                # 收集前几个样本用于PSNR计算
+                if batch_idx < 5:
+                    # 生成图像
+                    generated_tokens = self._generate_images(user_ids[:4])
+                    if generated_tokens is not None:
+                        # 解码生成的tokens
+                        generated_imgs = self._decode_tokens(generated_tokens)
+                        if generated_imgs is not None:
+                            original_images.append(images[:4].cpu())
+                            generated_images.append(generated_imgs.cpu())
+
+        self.transformer_model.train()
+
+        avg_loss = total_loss / max(num_batches, 1)
+
+        # 计算PSNR
+        psnr = self._calculate_psnr(original_images, generated_images)
+
+        return {
+            'loss': avg_loss,
+            'psnr': psnr,
+            'num_samples': num_batches * self.args.batch_size
+        }
+
+    def _generate_images(self, user_ids, max_length=1024):
+        """生成图像tokens"""
+        try:
+            with torch.no_grad():
+                # 使用Transformer生成tokens
+                batch_size = user_ids.shape[0]
+                device = user_ids.device
+
+                # 开始token（用户token）
+                generated = torch.full((batch_size, 1), self.transformer_model.user_token_id, device=device)
+
+                # 逐步生成
+                for _ in range(max_length):
+                    # 准备输入
+                    inputs = self.transformer_model.prepare_inputs(user_ids, None)
+
+                    # 更新input_ids为当前生成的序列
+                    inputs['input_ids'] = generated
+                    inputs['attention_mask'] = torch.ones_like(generated)
+
+                    # 前向传播
+                    if self.transformer_model.use_cross_attention:
+                        outputs = self.transformer_model.transformer(
+                            input_ids=inputs['input_ids'],
+                            attention_mask=inputs['attention_mask'],
+                            encoder_hidden_states=inputs['encoder_hidden_states'],
+                            encoder_attention_mask=inputs['encoder_attention_mask'],
+                        )
+                    else:
+                        outputs = self.transformer_model.transformer(
+                            input_ids=inputs['input_ids'],
+                            attention_mask=inputs['attention_mask'],
+                        )
+
+                    # 获取下一个token的logits
+                    next_token_logits = outputs.logits[:, -1, :] / self.args.generation_temperature
+
+                    # 采样下一个token
+                    next_token = torch.multinomial(torch.softmax(next_token_logits, dim=-1), 1)
+
+                    # 添加到生成序列
+                    generated = torch.cat([generated, next_token], dim=1)
+
+                    # 检查是否达到目标长度
+                    if generated.shape[1] >= max_length + 1:
+                        break
+
+                # 移除用户token，返回图像tokens
+                image_tokens = generated[:, 1:]  # 去掉第一个用户token
+
+                # 确保形状正确
+                if image_tokens.shape[1] < max_length:
+                    # 填充到正确长度
+                    padding = torch.zeros(batch_size, max_length - image_tokens.shape[1], device=device, dtype=torch.long)
+                    image_tokens = torch.cat([image_tokens, padding], dim=1)
+                elif image_tokens.shape[1] > max_length:
+                    # 截断到正确长度
+                    image_tokens = image_tokens[:, :max_length]
+
+                return image_tokens
+
+        except Exception as e:
+            print(f"⚠️ 生成图像失败: {e}")
+            return None
+
+    def _decode_tokens(self, tokens):
+        """将tokens解码为图像"""
+        try:
+            with torch.no_grad():
+                # 重塑为2D token map
+                batch_size = tokens.shape[0]
+                tokens_2d = tokens.view(batch_size, 32, 32)  # 32x32 token map
+
+                # 使用VQ-VAE解码
+                decoded_images = self.vqvae_model.decode(tokens_2d)
+
+                return decoded_images
+
+        except Exception as e:
+            print(f"⚠️ 解码tokens失败: {e}")
+            return None
+
+    def _calculate_psnr(self, original_images, generated_images):
+        """计算PSNR"""
+        if not original_images or not generated_images:
+            return 0.0
+
+        try:
+            import torch.nn.functional as F
+
+            # 合并所有图像
+            orig = torch.cat(original_images, dim=0)
+            gen = torch.cat(generated_images, dim=0)
+
+            # 确保形状匹配
+            if orig.shape != gen.shape:
+                gen = F.interpolate(gen, size=orig.shape[-2:], mode='bilinear', align_corners=False)
+
+            # 归一化到[0,1]
+            orig = (orig + 1) / 2  # 从[-1,1]到[0,1]
+            gen = (gen + 1) / 2
+
+            # 计算MSE
+            mse = F.mse_loss(gen, orig)
+
+            # 计算PSNR
+            if mse > 0:
+                psnr = 20 * torch.log10(1.0 / torch.sqrt(mse))
+                return psnr.item()
+            else:
+                return 100.0  # 完美匹配
+
+        except Exception as e:
+            print(f"⚠️ PSNR计算失败: {e}")
+            return 0.0
+
+    def generate_and_save_samples(self, epoch, num_users=4):
+        """生成并保存样本图像"""
+        print(f"🎨 生成第{epoch+1}轮样本图像...")
+
+        self.transformer_model.eval()
+
+        try:
+            # 选择不同的用户ID进行生成
+            user_ids = torch.tensor([1, 8, 16, 31], device=self.device)[:num_users]
+
+            with torch.no_grad():
+                # 生成图像tokens
+                generated_tokens = self._generate_images(user_ids)
+
+                if generated_tokens is not None:
+                    # 解码为图像
+                    generated_images = self._decode_tokens(generated_tokens)
+
+                    if generated_images is not None:
+                        # 保存图像
+                        self._save_sample_images(generated_images, user_ids, epoch)
+                        print(f"✅ 样本图像已保存")
+                    else:
+                        print(f"❌ 图像解码失败")
+                else:
+                    print(f"❌ 图像生成失败")
+
+        except Exception as e:
+            print(f"❌ 生成样本失败: {e}")
+
+        self.transformer_model.train()
+
+    def _save_sample_images(self, images, user_ids, epoch):
+        """保存样本图像"""
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        # 创建样本目录
+        samples_dir = self.output_dir / "samples"
+        samples_dir.mkdir(exist_ok=True)
+
+        # 转换图像格式
+        images = images.cpu().numpy()
+        images = (images + 1) / 2  # 从[-1,1]到[0,1]
+        images = np.clip(images, 0, 1)
+
+        # 创建网格图像
+        fig, axes = plt.subplots(1, len(user_ids), figsize=(4*len(user_ids), 4))
+        if len(user_ids) == 1:
+            axes = [axes]
+
+        for i, (img, user_id) in enumerate(zip(images, user_ids)):
+            # 转换为灰度图像（如果是3通道）
+            if img.shape[0] == 3:
+                img = np.mean(img, axis=0)
+            else:
+                img = img[0]
+
+            axes[i].imshow(img, cmap='viridis')
+            axes[i].set_title(f'User {user_id.item()}')
+            axes[i].axis('off')
+
+        plt.tight_layout()
+
+        # 保存图像
+        save_path = samples_dir / f"epoch_{epoch+1:03d}.png"
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        print(f"📸 样本图像保存至: {save_path}")
+
+    def _save_best_model(self, epoch, psnr, loss):
+        """保存最佳模型，删除旧的最佳模型"""
+        # 删除旧的最佳模型
+        old_best_files = list(self.output_dir.glob("best_model_*.pth"))
+        for old_file in old_best_files:
+            try:
+                old_file.unlink()
+                print(f"🗑️ 删除旧的最佳模型: {old_file.name}")
+            except Exception as e:
+                print(f"⚠️ 删除旧模型失败: {e}")
+
+        # 保存新的最佳模型
+        model_data = {
+            'epoch': epoch,
+            'model_state_dict': self.transformer_model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+            'psnr': psnr,
+            'loss': loss,
+            'args': self.args,
+        }
+
+        best_model_path = self.output_dir / f"best_model_epoch_{epoch+1:03d}_psnr_{psnr:.2f}.pth"
+        torch.save(model_data, best_model_path)
+        print(f"🏆 保存最佳模型: {best_model_path.name} (PSNR: {psnr:.2f} dB)")
 
 def main():
     parser = argparse.ArgumentParser(description="Transformer训练脚本")
