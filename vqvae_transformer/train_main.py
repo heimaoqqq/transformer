@@ -101,8 +101,15 @@ def train_transformer(args, config):
     """训练Transformer"""
     print("\n🎯 阶段2: 训练Transformer")
     print("=" * 50)
-    
-    vqvae_path = Path(args.output_dir) / "vqvae"
+
+    # 确定VQ-VAE路径
+    if args.vqvae_path:
+        vqvae_path = Path(args.vqvae_path)
+        print(f"📂 使用指定的VQ-VAE路径: {vqvae_path}")
+    else:
+        vqvae_path = Path(args.output_dir) / "vqvae"
+        print(f"📂 使用默认VQ-VAE路径: {vqvae_path}")
+
     transformer_output = Path(args.output_dir) / "transformer"
     
     # 检查VQ-VAE是否存在
@@ -169,6 +176,8 @@ def main():
                        help="图像分辨率")
     
     # VQ-VAE参数
+    parser.add_argument("--vqvae_path", type=str, default=None,
+                       help="预训练VQ-VAE模型路径 (如果不指定，使用output_dir/vqvae)")
     parser.add_argument("--codebook_size", type=int, default=1024,
                        help="码本大小")
     parser.add_argument("--commitment_cost", type=float, default=0.25,
