@@ -780,17 +780,44 @@ class TransformerTrainer:
         """将tokens解码为图像"""
         try:
             with torch.no_grad():
+                # 确保tokens是正确的数据类型
+                if tokens.dtype != torch.long:
+                    tokens = tokens.long()
+
+                # 检查token值范围
+                min_token = tokens.min().item()
+                max_token = tokens.max().item()
+                if min_token < 0 or max_token >= self.args.codebook_size:
+                    print(f"⚠️ Token值超出范围: [{min_token}, {max_token}]")
+                    return None
+
                 # 重塑为2D token map
                 batch_size = tokens.shape[0]
                 tokens_2d = tokens.view(batch_size, 32, 32)  # 32x32 token map
 
+                # 将token indices转换为embeddings
+                # 获取VQ-VAE的量化器
+                quantizer = self.vqvae_model.quantize
+
+                # 将token indices转换为embeddings
+                # tokens_2d: [B, H, W] -> embeddings: [B, H, W, D]
+                embeddings = quantizer.embedding(tokens_2d)  # [B, 32, 32, 256]
+
+                # 转换为VQ-VAE期望的格式: [B, D, H, W]
+                embeddings = embeddings.permute(0, 3, 1, 2)  # [B, 256, 32, 32]
+
                 # 使用VQ-VAE解码
-                decoded_images = self.vqvae_model.decode(tokens_2d)
+                decoded_images = self.vqvae_model.decode(embeddings)
 
                 return decoded_images
 
         except Exception as e:
             print(f"⚠️ 解码tokens失败: {e}")
+            # 打印更多调试信息
+            if 'tokens' in locals():
+                print(f"   tokens形状: {tokens.shape}")
+                print(f"   tokens类型: {tokens.dtype}")
+                print(f"   tokens范围: [{tokens.min().item()}, {tokens.max().item()}]")
             return None
 
     def _calculate_psnr(self, original_images, generated_images):
