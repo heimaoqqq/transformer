@@ -130,10 +130,12 @@ class TransformerTrainer:
         model = MicroDopplerTransformer(
             vocab_size=self.args.codebook_size,
             max_seq_len=self.args.resolution * self.args.resolution // 16,  # 假设16倍下采样
-            d_model=self.args.n_embd,
-            nhead=self.args.n_head,
-            num_layers=self.args.n_layer,
             num_users=self.args.num_users,
+            n_embd=self.args.n_embd,
+            n_layer=self.args.n_layer,
+            n_head=self.args.n_head,
+            dropout=0.1,
+            use_cross_attention=True,
         )
         model.to(self.device)
 
