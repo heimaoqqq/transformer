@@ -324,6 +324,41 @@ class TransformerTrainer:
         print(f"   用户条件影响: {'✅显著' if is_significant else '❌微弱'}")
 
         return model
+
+    def _check_user_distribution(self, train_dataset, val_dataset, full_dataset):
+        """检查训练集和验证集的用户分布"""
+        print(f"👥 检查用户分布:")
+
+        # 获取用户分布
+        def get_user_ids(dataset):
+            user_ids = set()
+            for i in range(min(len(dataset), 100)):  # 检查前100个样本
+                try:
+                    _, user_id = dataset[i]
+                    user_ids.add(user_id.item() if hasattr(user_id, 'item') else user_id)
+                except:
+                    continue
+            return user_ids
+
+        train_users = get_user_ids(train_dataset)
+        val_users = get_user_ids(val_dataset)
+
+        print(f"   训练集用户: {len(train_users)}个 {sorted(list(train_users))[:10]}{'...' if len(train_users) > 10 else ''}")
+        print(f"   验证集用户: {len(val_users)}个 {sorted(list(val_users))[:10]}{'...' if len(val_users) > 10 else ''}")
+
+        # 检查是否有用户缺失
+        missing_in_train = val_users - train_users
+        missing_in_val = train_users - val_users
+
+        if missing_in_train:
+            print(f"   ⚠️ 训练集缺少用户: {sorted(list(missing_in_train))}")
+        if missing_in_val:
+            print(f"   ⚠️ 验证集缺少用户: {sorted(list(missing_in_val))}")
+
+        if not missing_in_train and not missing_in_val:
+            print(f"   ✅ 训练集和验证集都包含所有用户")
+
+        print()
         
     def train(self):
         """训练Transformer"""
@@ -341,17 +376,45 @@ class TransformerTrainer:
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # 归一化到[-1, 1]
         ])
 
-        # 创建数据加载器
-        dataset = MicroDopplerDataset(
+        # 创建完整数据集
+        full_dataset = MicroDopplerDataset(
             data_dir=self.args.data_dir,
             transform=transform,  # 需要变换将PIL图像转为张量
             return_user_id=True,  # 需要用户ID进行条件生成
         )
-        
-        dataloader = DataLoader(
-            dataset,
+
+        # 划分训练集和验证集 (80% 训练, 20% 验证)
+        total_size = len(full_dataset)
+        train_size = int(0.8 * total_size)
+        val_size = total_size - train_size
+
+        print(f"📊 数据集划分:")
+        print(f"   总样本数: {total_size}")
+        print(f"   训练集: {train_size} ({train_size/total_size*100:.1f}%)")
+        print(f"   验证集: {val_size} ({val_size/total_size*100:.1f}%)")
+
+        # 使用固定随机种子确保可重复性
+        torch.manual_seed(42)
+        train_dataset, val_dataset = torch.utils.data.random_split(
+            full_dataset, [train_size, val_size]
+        )
+
+        # 检查用户分布
+        self._check_user_distribution(train_dataset, val_dataset, full_dataset)
+
+        # 创建数据加载器
+        train_dataloader = DataLoader(
+            train_dataset,
             batch_size=self.args.batch_size,
             shuffle=True,
+            num_workers=self.args.num_workers,
+            pin_memory=True
+        )
+
+        val_dataloader = DataLoader(
+            val_dataset,
+            batch_size=self.args.batch_size,
+            shuffle=False,  # 验证集不需要shuffle
             num_workers=self.args.num_workers,
             pin_memory=True
         )
@@ -363,7 +426,7 @@ class TransformerTrainer:
             self.transformer_model.train()
             total_loss = 0
             
-            pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{self.args.num_epochs}")
+            pbar = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{self.args.num_epochs}")
             
             for batch_idx, (images, user_ids) in enumerate(pbar):
                 images = images.to(self.device)
@@ -419,15 +482,15 @@ class TransformerTrainer:
             # 更新学习率
             self.scheduler.step()
             
-            avg_loss = total_loss / len(dataloader)
+            avg_loss = total_loss / len(train_dataloader)
             print(f"Epoch {epoch+1} 平均损失: {avg_loss:.4f}")
 
             # 每5个epoch进行评估和可视化
             if (epoch + 1) % 5 == 0:
                 print(f"\n📊 第{epoch+1}轮评估:")
 
-                # 评估模型
-                eval_metrics = self.evaluate(dataloader)
+                # 评估模型（使用验证集）
+                eval_metrics = self.evaluate(val_dataloader)
                 print(f"   验证损失: {eval_metrics['loss']:.4f}")
                 print(f"   PSNR: {eval_metrics['psnr']:.2f} dB")
                 print(f"   评估样本数: {eval_metrics['num_samples']}")
