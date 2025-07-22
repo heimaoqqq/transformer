@@ -44,20 +44,34 @@ def create_simple_dataset_class(data_dir):
             # 尝试多种目录结构
             patterns_tried = []
 
-            # 模式1: user_X 格式
+            # 模式1: ID_X 格式（实际数据集格式）
             for user_dir in subdirs:
-                if user_dir.name.startswith('user_'):
+                if user_dir.name.startswith('ID_'):
                     try:
                         user_id = int(user_dir.name.split('_')[1])
                         img_files = list(user_dir.glob('*.png')) + list(user_dir.glob('*.jpg')) + list(user_dir.glob('*.jpeg'))
                         for img_file in img_files:
                             self.samples.append((img_file, user_id))
                         if img_files:
-                            patterns_tried.append(f"user_{user_id}: {len(img_files)}个文件")
+                            patterns_tried.append(f"ID_{user_id}: {len(img_files)}个文件")
                     except (ValueError, IndexError):
                         continue
 
-            # 模式2: 数字目录格式
+            # 模式2: user_X 格式
+            if not self.samples:
+                for user_dir in subdirs:
+                    if user_dir.name.startswith('user_'):
+                        try:
+                            user_id = int(user_dir.name.split('_')[1])
+                            img_files = list(user_dir.glob('*.png')) + list(user_dir.glob('*.jpg')) + list(user_dir.glob('*.jpeg'))
+                            for img_file in img_files:
+                                self.samples.append((img_file, user_id))
+                            if img_files:
+                                patterns_tried.append(f"user_{user_id}: {len(img_files)}个文件")
+                        except (ValueError, IndexError):
+                            continue
+
+            # 模式3: 数字目录格式
             if not self.samples:
                 for user_dir in subdirs:
                     try:
@@ -70,7 +84,7 @@ def create_simple_dataset_class(data_dir):
                     except ValueError:
                         continue
 
-            # 模式3: 直接在根目录查找图像
+            # 模式4: 直接在根目录查找图像
             if not self.samples:
                 img_files = list(self.data_dir.glob('*.png')) + list(self.data_dir.glob('*.jpg')) + list(self.data_dir.glob('*.jpeg'))
                 for i, img_file in enumerate(img_files):
@@ -194,8 +208,9 @@ def create_validation_dataloader(data_dir, batch_size=8):
     dataset_class = None
     import_errors = []
 
-    # 导入路径列表
+    # 导入路径列表（参考Transformer训练代码）
     import_paths = [
+        "utils.data_loader",  # Transformer训练代码使用的路径
         "data.micro_doppler_dataset",
         "vqvae_transformer.data.micro_doppler_dataset",
         "micro_doppler_dataset",
@@ -203,7 +218,9 @@ def create_validation_dataloader(data_dir, batch_size=8):
 
     for import_path in import_paths:
         try:
-            if import_path == "data.micro_doppler_dataset":
+            if import_path == "utils.data_loader":
+                from utils.data_loader import MicroDopplerDataset
+            elif import_path == "data.micro_doppler_dataset":
                 from data.micro_doppler_dataset import MicroDopplerDataset
             elif import_path == "vqvae_transformer.data.micro_doppler_dataset":
                 from vqvae_transformer.data.micro_doppler_dataset import MicroDopplerDataset
