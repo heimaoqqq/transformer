@@ -112,17 +112,23 @@ def train_transformer(args, config):
 
     transformer_output = Path(args.output_dir) / "transformer"
     
-    # 检查VQ-VAE是否存在
+    # 检查VQ-VAE是否存在 - 支持多种格式
+    # 1. 直接diffusers格式 (config.json + safetensors在同一目录)
+    direct_diffusers = (vqvae_path / "config.json").exists() and (vqvae_path / "diffusion_pytorch_model.safetensors").exists()
+    # 2. final_model子目录格式
     final_model_exists = (vqvae_path / "final_model").exists()
+    # 3. checkpoint格式
     checkpoint_exists = (vqvae_path / "best_model.pth").exists() or len(list(vqvae_path.glob("*.pth"))) > 0
 
-    if not final_model_exists and not checkpoint_exists:
+    if not direct_diffusers and not final_model_exists and not checkpoint_exists:
         print(f"❌ 未找到VQ-VAE模型: {vqvae_path}")
-        print(f"   期望文件: final_model/ 或 *.pth")
+        print(f"   期望文件: config.json + diffusion_pytorch_model.safetensors 或 final_model/ 或 *.pth")
         return False
 
-    if final_model_exists:
-        print(f"✅ 找到VQ-VAE模型 (diffusers格式): {vqvae_path}/final_model")
+    if direct_diffusers:
+        print(f"✅ 找到VQ-VAE模型 (直接diffusers格式): {vqvae_path}")
+    elif final_model_exists:
+        print(f"✅ 找到VQ-VAE模型 (final_model子目录): {vqvae_path}/final_model")
     else:
         print(f"✅ 找到VQ-VAE模型 (checkpoint格式): {vqvae_path}/*.pth")
     

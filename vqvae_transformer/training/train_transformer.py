@@ -60,19 +60,36 @@ class TransformerTrainer:
         """加载预训练的VQ-VAE模型"""
         vqvae_path = Path(self.args.vqvae_path)
 
-        # 优先使用final_model目录 (diffusers格式)
+        # 检查是否直接包含diffusers格式文件 (config.json + safetensors)
+        config_file = vqvae_path / "config.json"
+        safetensors_file = vqvae_path / "diffusion_pytorch_model.safetensors"
+
+        if config_file.exists() and safetensors_file.exists():
+            print(f"📂 加载VQ-VAE模型 (直接diffusers格式): {vqvae_path}")
+            try:
+                from models.vqvae_model import MicroDopplerVQVAE
+                vqvae_model = MicroDopplerVQVAE.from_pretrained(vqvae_path)
+                vqvae_model.to(self.device)
+                vqvae_model.eval()
+                print("✅ 成功加载直接diffusers格式模型")
+                return vqvae_model
+            except Exception as e:
+                print(f"⚠️ 直接diffusers格式加载失败: {e}")
+                print("🔄 尝试final_model子目录...")
+
+        # 尝试final_model子目录 (diffusers格式)
         final_model_path = vqvae_path / "final_model"
         if final_model_path.exists():
-            print(f"📂 加载VQ-VAE模型 (diffusers格式): {final_model_path}")
+            print(f"📂 加载VQ-VAE模型 (final_model子目录): {final_model_path}")
             try:
                 from models.vqvae_model import MicroDopplerVQVAE
                 vqvae_model = MicroDopplerVQVAE.from_pretrained(final_model_path)
                 vqvae_model.to(self.device)
                 vqvae_model.eval()
-                print("✅ 成功加载diffusers格式模型")
+                print("✅ 成功加载final_model子目录格式模型")
                 return vqvae_model
             except Exception as e:
-                print(f"⚠️ diffusers格式加载失败: {e}")
+                print(f"⚠️ final_model子目录格式加载失败: {e}")
                 print("🔄 尝试checkpoint格式...")
 
         # 备选：使用checkpoint文件
