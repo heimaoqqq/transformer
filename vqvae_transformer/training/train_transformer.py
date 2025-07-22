@@ -158,8 +158,8 @@ class TransformerTrainer:
         # 创建数据加载器
         dataset = MicroDopplerDataset(
             data_dir=self.args.data_dir,
-            resolution=self.args.resolution,
-            num_users=self.args.num_users
+            transform=None,  # Transformer训练不需要图像变换，VQ-VAE会处理
+            return_user_id=True,  # 需要用户ID进行条件生成
         )
         
         dataloader = DataLoader(
