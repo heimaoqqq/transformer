@@ -68,13 +68,24 @@ class UserConditionEncoder(nn.Module):
         # 用户ID嵌入 - 支持用户ID从1开始
         self.user_embedding = nn.Embedding(num_users + 1, embed_dim)
         
-        # 可学习的用户特征增强
+        # 增强的用户特征学习网络 - 专为微小差异设计
         self.user_mlp = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * 2),
+            nn.Linear(embed_dim, embed_dim * 4),  # 更大的隐藏层
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim * 4, embed_dim * 2),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(embed_dim * 2, embed_dim),
-            nn.Dropout(dropout),
+            nn.LayerNorm(embed_dim),  # 添加LayerNorm稳定训练
+        )
+
+        # 用户特征多头注意力 - 增强特征表达能力
+        self.user_self_attention = nn.MultiheadAttention(
+            embed_dim=embed_dim,
+            num_heads=8,
+            dropout=dropout,
+            batch_first=True
         )
         
         # 初始化
@@ -82,14 +93,29 @@ class UserConditionEncoder(nn.Module):
     
     def forward(self, user_ids: torch.Tensor) -> torch.Tensor:
         """
+        增强的用户特征编码
         Args:
             user_ids: [batch_size] 用户ID
         Returns:
-            user_embeds: [batch_size, embed_dim] 用户嵌入
+            user_embeds: [batch_size, embed_dim] 增强的用户嵌入
         """
-        user_embeds = self.user_embedding(user_ids)
-        user_embeds = self.user_mlp(user_embeds)
-        return user_embeds
+        # 基础用户嵌入
+        user_embeds = self.user_embedding(user_ids)  # [B, embed_dim]
+
+        # 通过MLP增强特征
+        enhanced_embeds = self.user_mlp(user_embeds)  # [B, embed_dim]
+
+        # 自注意力进一步增强用户特征表达
+        # 为了使用多头注意力，我们需要序列维度
+        user_seq = enhanced_embeds.unsqueeze(1)  # [B, 1, embed_dim]
+        attended_embeds, _ = self.user_self_attention(
+            user_seq, user_seq, user_seq
+        )  # [B, 1, embed_dim]
+
+        # 残差连接
+        final_embeds = enhanced_embeds + attended_embeds.squeeze(1)
+
+        return final_embeds
 
 class MicroDopplerTransformer(nn.Module):
     """
@@ -153,9 +179,20 @@ class MicroDopplerTransformer(nn.Module):
         self.user_token_id = vocab_size  # 用户token ID
         self.pad_token_id = vocab_size   # padding token
         
-        # 如果使用交叉注意力，需要投影层
+        # 增强的交叉注意力机制
         if use_cross_attention:
-            self.user_proj = nn.Linear(n_embd, n_embd)
+            # 多层用户特征投影，增强用户信息表达
+            self.user_proj = nn.Sequential(
+                nn.Linear(n_embd, n_embd * 2),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(n_embd * 2, n_embd),
+                nn.LayerNorm(n_embd),
+            )
+
+            # 用户特征扩展 - 从1个token扩展到多个token增强表达能力
+            self.user_expansion_factor = 4  # 扩展为4个token
+            self.user_expand = nn.Linear(n_embd, n_embd * self.user_expansion_factor)
         
         print(f"🤖 微多普勒Transformer初始化:")
         print(f"   模型类型: 自定义GPT2 (专为视觉token优化)")
@@ -236,9 +273,17 @@ class MicroDopplerTransformer(nn.Module):
         user_embeds = self.user_encoder(user_ids)  # [batch_size, n_embd]
         
         if self.use_cross_attention:
-            # 交叉注意力模式：用户嵌入作为encoder_hidden_states
-            encoder_hidden_states = self.user_proj(user_embeds).unsqueeze(1)  # [batch_size, 1, n_embd]
-            encoder_attention_mask = torch.ones(batch_size, 1, device=device)
+            # 增强的交叉注意力模式：扩展用户特征表达
+            projected_user_embeds = self.user_proj(user_embeds)  # [B, n_embd]
+
+            # 扩展用户特征为多个token以增强表达能力
+            expanded_user_features = self.user_expand(projected_user_embeds)  # [B, n_embd * 4]
+            expanded_user_features = expanded_user_features.view(
+                batch_size, self.user_expansion_factor, self.n_embd
+            )  # [B, 4, n_embd]
+
+            encoder_hidden_states = expanded_user_features
+            encoder_attention_mask = torch.ones(batch_size, self.user_expansion_factor, device=device)
         else:
             # 自注意力模式：用户嵌入替换用户token的嵌入
             encoder_hidden_states = None
