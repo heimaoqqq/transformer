@@ -155,10 +155,18 @@ class TransformerTrainer:
         print(f"   训练轮数: {self.args.num_epochs}")
         print(f"   学习率: {self.args.learning_rate}")
         
+        # 创建图像变换 - 转换为张量
+        from torchvision import transforms
+        transform = transforms.Compose([
+            transforms.Resize((self.args.resolution, self.args.resolution)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # 归一化到[-1, 1]
+        ])
+
         # 创建数据加载器
         dataset = MicroDopplerDataset(
             data_dir=self.args.data_dir,
-            transform=None,  # Transformer训练不需要图像变换，VQ-VAE会处理
+            transform=transform,  # 需要变换将PIL图像转为张量
             return_user_id=True,  # 需要用户ID进行条件生成
         )
         
