@@ -130,18 +130,21 @@ class TransformerTrainer:
         model = MicroDopplerTransformer(
             vocab_size=self.args.codebook_size,
             max_seq_len=self.args.resolution * self.args.resolution // 16,  # 假设16倍下采样
-            d_model=512,
-            nhead=8,
-            num_layers=6,
+            d_model=self.args.n_embd,
+            nhead=self.args.n_head,
+            num_layers=self.args.n_layer,
             num_users=self.args.num_users,
         )
         model.to(self.device)
-        
+
         print(f"✅ Transformer模型创建成功")
         print(f"   词汇表大小: {self.args.codebook_size}")
+        print(f"   嵌入维度: {self.args.n_embd}")
+        print(f"   层数: {self.args.n_layer}")
+        print(f"   注意力头数: {self.args.n_head}")
         print(f"   序列长度: {model.max_seq_len}")
         print(f"   用户数量: {self.args.num_users}")
-        
+
         return model
         
     def train(self):
@@ -270,7 +273,12 @@ def main():
     parser.add_argument("--resolution", type=int, default=128, help="图像分辨率")
     parser.add_argument("--codebook_size", type=int, default=1024, help="码本大小")
     parser.add_argument("--num_users", type=int, default=31, help="用户数量")
-    
+
+    # Transformer架构参数
+    parser.add_argument("--n_embd", type=int, default=512, help="Transformer嵌入维度")
+    parser.add_argument("--n_layer", type=int, default=8, help="Transformer层数")
+    parser.add_argument("--n_head", type=int, default=8, help="注意力头数")
+
     # 训练参数
     parser.add_argument("--batch_size", type=int, default=8, help="批次大小")
     parser.add_argument("--num_epochs", type=int, default=100, help="训练轮数")
@@ -278,6 +286,11 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=0.01, help="权重衰减")
     parser.add_argument("--num_workers", type=int, default=4, help="数据加载器工作进程数")
     parser.add_argument("--device", type=str, default="cuda", help="训练设备")
+
+    # 保存和采样参数
+    parser.add_argument("--save_interval", type=int, default=10, help="模型保存间隔")
+    parser.add_argument("--sample_interval", type=int, default=10, help="样本生成间隔")
+    parser.add_argument("--generation_temperature", type=float, default=1.0, help="生成温度")
     
     args = parser.parse_args()
     
