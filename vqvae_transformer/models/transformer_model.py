@@ -270,6 +270,14 @@ class MicroDopplerTransformer(nn.Module):
             print(f"   用户特征扩展: {'✅启用' if has_user_expand else '❌未启用'}")
             print(f"   扩展因子: {self.user_expansion_factor}")
 
+            # 详细检查投影层和扩展层
+            if has_user_proj:
+                proj_params = sum(p.numel() for p in self.user_proj.parameters())
+                print(f"   投影层参数: {proj_params}")
+            if has_user_expand:
+                expand_params = sum(p.numel() for p in self.user_expand.parameters())
+                print(f"   扩展层参数: {expand_params}")
+
         # 检查GPT2交叉注意力
         gpt2_has_cross_attn = self.transformer.config.add_cross_attention
         print(f"   GPT2交叉注意力: {'✅启用' if gpt2_has_cross_attn else '❌未启用'}")
