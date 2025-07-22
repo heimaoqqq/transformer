@@ -264,19 +264,20 @@ class MicroDopplerTransformer(nn.Module):
 
         # 检查交叉注意力增强
         if self.use_cross_attention:
-            has_user_proj = hasattr(self, 'user_proj')
-            has_user_expand = hasattr(self, 'user_expand')
-            print(f"   增强用户投影: {'✅启用' if has_user_proj else '❌未启用'}")
-            print(f"   用户特征扩展: {'✅启用' if has_user_expand else '❌未启用'}")
-            print(f"   扩展因子: {self.user_expansion_factor}")
-
-            # 详细检查投影层和扩展层
-            if has_user_proj:
+            # 通过参数量来验证（更可靠的方法）
+            try:
                 proj_params = sum(p.numel() for p in self.user_proj.parameters())
-                print(f"   投影层参数: {proj_params}")
-            if has_user_expand:
                 expand_params = sum(p.numel() for p in self.user_expand.parameters())
-                print(f"   扩展层参数: {expand_params}")
+
+                has_user_proj = proj_params > 0
+                has_user_expand = expand_params > 0
+
+                print(f"   增强用户投影: {'✅启用' if has_user_proj else '❌未启用'} ({proj_params:,}参数)")
+                print(f"   用户特征扩展: {'✅启用' if has_user_expand else '❌未启用'} ({expand_params:,}参数)")
+                print(f"   扩展因子: {self.user_expansion_factor}")
+            except AttributeError:
+                print(f"   增强用户投影: ❌未启用 (属性不存在)")
+                print(f"   用户特征扩展: ❌未启用 (属性不存在)")
 
         # 检查GPT2交叉注意力
         gpt2_has_cross_attn = self.transformer.config.add_cross_attention
