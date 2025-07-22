@@ -359,6 +359,62 @@ class TransformerTrainer:
             print(f"   ✅ 训练集和验证集都包含所有用户")
 
         print()
+
+    def _stratified_split(self, dataset, train_ratio=0.8):
+        """按用户分层划分数据集，确保每个用户的样本都按比例分配"""
+        print(f"🔄 执行分层划分 (确保每个用户都在训练集和验证集中)...")
+
+        # 收集每个用户的样本索引
+        user_indices = {}
+        for idx in range(len(dataset)):
+            try:
+                _, user_id = dataset[idx]
+                user_id = user_id.item() if hasattr(user_id, 'item') else user_id
+
+                if user_id not in user_indices:
+                    user_indices[user_id] = []
+                user_indices[user_id].append(idx)
+            except Exception as e:
+                print(f"⚠️ 处理样本{idx}时出错: {e}")
+                continue
+
+        print(f"   发现 {len(user_indices)} 个用户")
+
+        # 为每个用户分配样本到训练集和验证集
+        train_indices = []
+        val_indices = []
+
+        import random
+        random.seed(42)  # 固定随机种子
+
+        for user_id, indices in user_indices.items():
+            # 随机打乱该用户的样本
+            indices = indices.copy()
+            random.shuffle(indices)
+
+            # 计算训练集样本数（至少1个）
+            user_train_size = max(1, int(len(indices) * train_ratio))
+
+            # 如果用户只有1个样本，放到训练集
+            if len(indices) == 1:
+                train_indices.extend(indices)
+                print(f"   用户{user_id}: 1个样本 → 训练集")
+            else:
+                # 分配样本
+                user_train_indices = indices[:user_train_size]
+                user_val_indices = indices[user_train_size:]
+
+                train_indices.extend(user_train_indices)
+                val_indices.extend(user_val_indices)
+
+                print(f"   用户{user_id}: {len(indices)}个样本 → 训练集{len(user_train_indices)}个, 验证集{len(user_val_indices)}个")
+
+        # 随机打乱最终的索引列表
+        random.shuffle(train_indices)
+        random.shuffle(val_indices)
+
+        print(f"✅ 分层划分完成")
+        return train_indices, val_indices
         
     def train(self):
         """训练Transformer"""
@@ -383,21 +439,18 @@ class TransformerTrainer:
             return_user_id=True,  # 需要用户ID进行条件生成
         )
 
-        # 划分训练集和验证集 (80% 训练, 20% 验证)
-        total_size = len(full_dataset)
-        train_size = int(0.8 * total_size)
-        val_size = total_size - train_size
+        # 分层划分训练集和验证集 (80% 训练, 20% 验证)
+        # 确保每个用户的样本都按比例分配到训练集和验证集
+        train_indices, val_indices = self._stratified_split(full_dataset, train_ratio=0.8)
 
         print(f"📊 数据集划分:")
-        print(f"   总样本数: {total_size}")
-        print(f"   训练集: {train_size} ({train_size/total_size*100:.1f}%)")
-        print(f"   验证集: {val_size} ({val_size/total_size*100:.1f}%)")
+        print(f"   总样本数: {len(full_dataset)}")
+        print(f"   训练集: {len(train_indices)} ({len(train_indices)/len(full_dataset)*100:.1f}%)")
+        print(f"   验证集: {len(val_indices)} ({len(val_indices)/len(full_dataset)*100:.1f}%)")
 
-        # 使用固定随机种子确保可重复性
-        torch.manual_seed(42)
-        train_dataset, val_dataset = torch.utils.data.random_split(
-            full_dataset, [train_size, val_size]
-        )
+        # 创建子数据集
+        train_dataset = torch.utils.data.Subset(full_dataset, train_indices)
+        val_dataset = torch.utils.data.Subset(full_dataset, val_indices)
 
         # 检查用户分布
         self._check_user_distribution(train_dataset, val_dataset, full_dataset)
