@@ -37,7 +37,7 @@ def get_optimized_config():
     if gpu_memory >= 14:  # P100, V100等
         return {
             "vqvae_batch_size": 16,
-            "transformer_batch_size": 8,
+            "transformer_batch_size": 8,  # 保持8，避免内存不足
             "num_workers": 4,
             "mixed_precision": False,  # P100不支持混合精度
         }
@@ -206,13 +206,13 @@ def main():
                        help="注意力头数")
     parser.add_argument("--transformer_epochs", type=int, default=50,
                        help="Transformer训练轮数")
-    parser.add_argument("--transformer_lr", type=float, default=1e-4,
+    parser.add_argument("--transformer_lr", type=float, default=5e-4,
                        help="Transformer学习率")
     parser.add_argument("--use_cross_attention", action="store_true",
                        help="使用交叉注意力")
     
     # 生成参数
-    parser.add_argument("--generation_temperature", type=float, default=1.0,
+    parser.add_argument("--generation_temperature", type=float, default=0.8,
                        help="生成温度")
     
     # 训练控制
