@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 import argparse
 
-def fix_final_model(vqvae_dir, best_model_path=None):
+def fix_final_model(vqvae_dir, best_model_path=None, final_model_path=None):
     """用best_model.pth权重替换final_model"""
     vqvae_path = Path(vqvae_dir)
 
@@ -18,7 +18,11 @@ def fix_final_model(vqvae_dir, best_model_path=None):
         best_model_path = Path(best_model_path)
     else:
         best_model_path = vqvae_path / "best_model.pth"
-    final_model_path = vqvae_path / "final_model"
+
+    if final_model_path:
+        final_model_path = Path(final_model_path)
+    else:
+        final_model_path = vqvae_path / "final_model"
 
     if not best_model_path.exists():
         print(f"错误：未找到best_model.pth文件：{best_model_path}")
@@ -48,14 +52,37 @@ def fix_final_model(vqvae_dir, best_model_path=None):
             print(f"错误：检查点格式不正确")
             return False
 
-        # 备份原始final_model
-        backup_path = vqvae_path / "final_model_backup"
-        if backup_path.exists():
-            shutil.rmtree(backup_path)
+        # 如果final_model在输入目录，需要复制到输出目录
+        if str(final_model_path).startswith('/kaggle/input/'):
+            # 创建输出目录中的final_model
+            output_final_model_path = vqvae_path / "final_model"
+            print(f"检测到输入路径的final_model，复制到输出目录...")
 
-        print(f"正在备份原始final_model...")
-        shutil.copytree(final_model_path, backup_path)
-        print(f"备份完成：{backup_path}")
+            # 如果输出目录已有final_model，先备份
+            if output_final_model_path.exists():
+                backup_path = vqvae_path / "final_model_backup"
+                if backup_path.exists():
+                    shutil.rmtree(backup_path)
+                shutil.copytree(output_final_model_path, backup_path)
+                print(f"备份现有final_model：{backup_path}")
+
+            # 复制输入的final_model到输出目录
+            if output_final_model_path.exists():
+                shutil.rmtree(output_final_model_path)
+            shutil.copytree(final_model_path, output_final_model_path)
+            print(f"复制完成：{final_model_path} -> {output_final_model_path}")
+
+            # 更新路径为输出目录
+            final_model_path = output_final_model_path
+        else:
+            # 备份原始final_model
+            backup_path = vqvae_path / "final_model_backup"
+            if backup_path.exists():
+                shutil.rmtree(backup_path)
+
+            print(f"正在备份原始final_model...")
+            shutil.copytree(final_model_path, backup_path)
+            print(f"备份完成：{backup_path}")
 
         # 加载模型并用最佳权重更新
         print(f"正在用最佳权重更新final_model...")
@@ -103,6 +130,9 @@ def main():
     parser.add_argument("--best_model_path", type=str,
                        default=None,
                        help="best_model.pth文件的自定义路径")
+    parser.add_argument("--final_model_path", type=str,
+                       default=None,
+                       help="final_model目录的自定义路径")
 
     args = parser.parse_args()
 
@@ -112,8 +142,10 @@ def main():
     print(f"VQ-VAE目录：{args.vqvae_dir}")
     if args.best_model_path:
         print(f"最佳模型路径：{args.best_model_path}")
+    if args.final_model_path:
+        print(f"Final模型路径：{args.final_model_path}")
 
-    success = fix_final_model(args.vqvae_dir, args.best_model_path)
+    success = fix_final_model(args.vqvae_dir, args.best_model_path, args.final_model_path)
 
     if success:
         print("\n修复完成！")
