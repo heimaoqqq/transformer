@@ -666,34 +666,92 @@ class VQVAETrainer:
                         # 直接对latents进行量化
                         quantize_output = self.vqvae_model.quantize(latents)
 
+                        if sample_count == 0:
+                            print(f"   🔍 quantize_output类型: {type(quantize_output)}")
+                            if hasattr(quantize_output, '__dict__'):
+                                print(f"   🔍 quantize_output属性: {list(quantize_output.__dict__.keys())}")
+
                         # 检查量化输出的结构
+                        indices = None
                         if hasattr(quantize_output, 'min_encoding_indices'):
                             indices = quantize_output.min_encoding_indices
+                            if sample_count == 0:
+                                print(f"   ✅ 找到min_encoding_indices")
                         elif hasattr(quantize_output, 'encoding_indices'):
                             indices = quantize_output.encoding_indices
+                            if sample_count == 0:
+                                print(f"   ✅ 找到encoding_indices")
                         elif isinstance(quantize_output, tuple) and len(quantize_output) >= 2:
                             # 有些实现返回 (quantized, indices, ...)
                             indices = quantize_output[1]
+                            if sample_count == 0:
+                                print(f"   ✅ 从tuple获取索引 (位置1)")
                         else:
-                            # 如果是字典格式
+                            # 如果是字典格式或其他结构
                             if hasattr(quantize_output, '__dict__'):
                                 for key in ['indices', 'min_encoding_indices', 'encoding_indices']:
                                     if hasattr(quantize_output, key):
                                         indices = getattr(quantize_output, key)
+                                        if sample_count == 0:
+                                            print(f"   ✅ 找到属性: {key}")
                                         break
                                 else:
+                                    if sample_count == 0:
+                                        print(f"   ⚠️ 未找到任何索引属性")
                                     indices = None
                             else:
+                                if sample_count == 0:
+                                    print(f"   ⚠️ quantize_output不是预期的格式")
                                 indices = None
 
                         if indices is not None:
-                            # 收集使用的码本索引
-                            unique_indices = torch.unique(indices.flatten()).cpu().numpy()
-                            used_codes.update(unique_indices)
-
                             if sample_count == 0:
                                 print(f"   📊 成功获取量化索引，形状: {indices.shape}")
-                                print(f"   📊 第一个batch使用的码本数: {len(unique_indices)}")
+                                print(f"   📊 索引数据类型: {indices.dtype}")
+
+                                # 安全地获取索引信息
+                                if indices.numel() > 0:
+                                    if indices.dim() == 0:  # 标量
+                                        print(f"   📊 标量索引值: {indices.item()}")
+                                    else:
+                                        print(f"   📊 索引值范围: min={indices.min().item()}, max={indices.max().item()}")
+                                        print(f"   📊 索引前几个值: {indices.flatten()[:10].tolist()}")
+                                else:
+                                    print(f"   ⚠️ 索引张量为空")
+
+                            # 检查索引的有效性
+                            if indices.numel() == 0:
+                                if sample_count == 0:
+                                    print(f"   ⚠️ 索引张量为空！")
+                                continue
+
+                            # 确保索引是整数类型
+                            if indices.dtype != torch.long:
+                                indices = indices.long()
+
+                            # 收集使用的码本索引
+                            try:
+                                # 处理不同维度的索引
+                                if indices.dim() == 0:  # 标量
+                                    unique_indices = [indices.item()]
+                                elif indices.dim() == 1:  # 1D张量
+                                    unique_indices = torch.unique(indices).cpu().numpy()
+                                else:  # 多维张量
+                                    unique_indices = torch.unique(indices.flatten()).cpu().numpy()
+
+                                # 过滤有效的索引值
+                                valid_indices = [idx for idx in unique_indices if 0 <= idx < total_codes]
+                                used_codes.update(valid_indices)
+
+                                if sample_count == 0:
+                                    print(f"   📊 第一个batch使用的码本数: {len(valid_indices)}")
+                                    print(f"   📊 有效索引: {valid_indices[:10]}...")  # 显示前10个
+
+                            except Exception as e:
+                                if sample_count == 0:
+                                    print(f"   ❌ 处理索引时出错: {e}")
+                                continue
+
                         else:
                             if sample_count == 0:
                                 print(f"   ⚠️ quantize方法存在但无法获取索引")
