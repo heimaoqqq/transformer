@@ -82,7 +82,74 @@ class VQVAETrainer:
         )
         
         print(f"✅ VQ-VAE训练器初始化完成")
-    
+
+        # 输出关键训练参数
+        self._log_training_parameters()
+
+    def _log_training_parameters(self):
+        """输出影响训练质量的关键参数"""
+        print("\n" + "="*60)
+        print("🔧 关键训练参数 - 影响训练质量的核心配置")
+        print("="*60)
+
+        # 模型架构参数
+        print("📐 模型架构参数:")
+        print(f"   🏗️ VQ-VAE架构: diffusers.VQModel (标准实现)")
+        print(f"   📚 码本大小: {self.args.vocab_size}")
+        print(f"   🔢 VQ嵌入维度: {self.args.vq_embed_dim}")
+        print(f"   📏 潜在通道数: {self.args.latent_channels}")
+        print(f"   🎯 缩放因子: 0.18215 (diffusers标准)")
+
+        # 训练超参数
+        print("\n⚙️ 训练超参数:")
+        print(f"   📈 学习率: {self.args.learning_rate}")
+        print(f"   🔄 训练轮数: {self.args.num_epochs}")
+        print(f"   📦 批次大小: {self.args.batch_size}")
+        print(f"   ⚖️ 权重衰减: {self.args.weight_decay}")
+        print(f"   💪 VQ承诺损失权重: {self.args.commitment_cost}")
+        print(f"   📊 优化器: AdamW (betas=(0.9, 0.95))")
+        print(f"   📉 学习率调度: CosineAnnealingLR")
+
+        # 数据处理参数
+        print("\n🖼️ 数据处理参数:")
+        print(f"   📏 图像尺寸: 128x128 (标准化)")
+        print(f"   🎨 颜色通道: 3 (RGB)")
+        print(f"   📊 归一化: mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]")
+        print(f"   🔄 数据增强: Resize + ToTensor + Normalize")
+
+        # 防坍缩技术
+        print("\n🛡️ 码本坍缩防护技术:")
+        print(f"   🔧 技术栈: diffusers内置EMA + 承诺损失")
+        print(f"   📊 EMA衰减: 自适应 (diffusers管理)")
+        print(f"   ⚖️ 承诺损失: {self.args.commitment_cost} * ||sg[z_e] - z_q||²")
+        print(f"   🔄 码本更新: 指数移动平均 (EMA)")
+        print(f"   🎯 量化策略: 最近邻 + 梯度直通估计")
+
+        # 质量保证技术
+        print("\n🎨 高质量重建技术:")
+        print(f"   🏗️ 编码器: 4层下采样 (128→256→512→512)")
+        print(f"   🔄 解码器: 4层上采样 (512→512→256→128)")
+        print(f"   🎯 激活函数: SiLU (Swish) - 平滑梯度")
+        print(f"   📊 归一化: GroupNorm (32组) - 稳定训练")
+        print(f"   🔧 残差连接: 深层特征保持")
+        print(f"   ⚡ 注意力机制: 无 (专注重建质量)")
+
+        # 训练策略
+        print("\n🚀 训练策略:")
+        print(f"   💾 模型保存: 最佳损失 + 每{self.args.save_every}轮检查点")
+        print(f"   📊 验证评估: {'启用' if self.args.use_validation else '禁用'}")
+        print(f"   🖼️ 样本生成: 每{self.args.save_every}轮生成重建对比图")
+        print(f"   ✂️ 梯度裁剪: max_norm=1.0 (防止梯度爆炸)")
+        print(f"   🎯 损失函数: MSE重建损失 + VQ承诺损失")
+
+        print("="*60)
+        print("💡 技术说明:")
+        print("   🔬 缩放技术: 使用diffusers标准scaling_factor=0.18215")
+        print("   🛡️ 防坍缩: EMA更新 + 承诺损失 + 梯度直通估计")
+        print("   🎨 高质量: SiLU激活 + GroupNorm + 残差连接")
+        print("   📊 成熟技术: 基于VQGAN/VQVAE-2的成熟架构")
+        print("="*60 + "\n")
+
     def train(self):
         """训练VQ-VAE"""
         print(f"🚀 开始VQ-VAE训练...")
