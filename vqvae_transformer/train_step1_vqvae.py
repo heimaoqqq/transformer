@@ -148,9 +148,11 @@ class VQVAETrainer:
         print(f"   🎯 量化策略: 最近邻 + 梯度直通估计")
 
         # 质量保证技术
+        image_size = getattr(self.args, 'image_size', 128)
         print("\n🎨 高质量重建技术:")
-        print(f"   🏗️ 编码器: 4层下采样 (128→256→512→512)")
-        print(f"   🔄 解码器: 4层上采样 (512→512→256→128)")
+        print(f"   🏗️ 编码器: 4层下采样 ({image_size}→{image_size//2}→{image_size//4}→{image_size//8})")
+        print(f"   🔄 解码器: 4层上采样 ({image_size//8}→{image_size//4}→{image_size//2}→{image_size})")
+        print(f"   📊 特征通道: [128, 256, 512, 512] (逐层增加)")
         print(f"   🎯 激活函数: SiLU (Swish) - 平滑梯度")
         print(f"   📊 归一化: GroupNorm (32组) - 稳定训练")
         print(f"   🔧 残差连接: 深层特征保持")
@@ -280,28 +282,37 @@ class VQVAETrainer:
                 # VQ损失（commitment loss）
                 vq_loss = 0
 
-                # 调试：在第一个batch时输出encoder_output的属性
+                # 调试：在第一个batch时输出输出结构
                 if batch_idx == 0 and epoch == 0:
-                    print(f"\n🔍 调试信息 - encoder_output属性:")
-                    print(f"   类型: {type(encoder_output)}")
-                    print(f"   属性: {dir(encoder_output)}")
-                    if hasattr(encoder_output, '__dict__'):
-                        print(f"   字典: {encoder_output.__dict__.keys()}")
+                    print(f"\n🔍 调试信息:")
+                    print(f"   encoder_output类型: {type(encoder_output)}")
+                    print(f"   encoder_output属性: {encoder_output.__dict__.keys() if hasattr(encoder_output, '__dict__') else 'N/A'}")
+                    print(f"   decoder_output类型: {type(decoder_output)}")
+                    print(f"   decoder_output属性: {decoder_output.__dict__.keys() if hasattr(decoder_output, '__dict__') else 'N/A'}")
 
-                # 尝试多种可能的VQ损失属性名
-                if hasattr(encoder_output, 'commit_loss') and encoder_output.commit_loss is not None:
+                # VQ损失在decoder_output中（根据diffusers源码）
+                if hasattr(decoder_output, 'commit_loss') and decoder_output.commit_loss is not None:
+                    vq_loss = decoder_output.commit_loss.mean()
+                    if batch_idx == 0 and epoch == 0:
+                        print(f"   ✅ 找到decoder commit_loss: {vq_loss.item():.6f}")
+                elif hasattr(decoder_output, 'quantization_loss') and decoder_output.quantization_loss is not None:
+                    vq_loss = decoder_output.quantization_loss.mean()
+                    if batch_idx == 0 and epoch == 0:
+                        print(f"   ✅ 找到decoder quantization_loss: {vq_loss.item():.6f}")
+                # 备选：检查encoder_output
+                elif hasattr(encoder_output, 'commit_loss') and encoder_output.commit_loss is not None:
                     vq_loss = encoder_output.commit_loss.mean()
+                    if batch_idx == 0 and epoch == 0:
+                        print(f"   ✅ 找到encoder commit_loss: {vq_loss.item():.6f}")
                 elif hasattr(encoder_output, 'quantization_loss') and encoder_output.quantization_loss is not None:
                     vq_loss = encoder_output.quantization_loss.mean()
-                elif hasattr(encoder_output, 'loss') and encoder_output.loss is not None:
-                    vq_loss = encoder_output.loss.mean()
-                elif hasattr(encoder_output, 'vq_loss') and encoder_output.vq_loss is not None:
-                    vq_loss = encoder_output.vq_loss.mean()
+                    if batch_idx == 0 and epoch == 0:
+                        print(f"   ✅ 找到encoder quantization_loss: {vq_loss.item():.6f}")
                 else:
-                    # 如果没有找到VQ损失，设为0（可能是diffusers版本问题）
+                    # 如果都没有找到，设为0
                     vq_loss = torch.tensor(0.0, device=images.device)
                     if batch_idx == 0 and epoch == 0:
-                        print(f"   ⚠️ 未找到VQ损失属性，设为0")
+                        print(f"   ⚠️ 未找到VQ损失，可能内部处理或版本差异")
                 
                 # 总损失
                 total_batch_loss = recon_loss + self.args.commitment_cost * vq_loss
