@@ -40,7 +40,14 @@ class TransformerTrainer:
         
         # 加载VQ-VAE模型
         self.vqvae_model = self._load_vqvae_model()
-        
+
+        # 🔒 冻结VQ-VAE模型 - 这是标准做法！
+        print("🔒 冻结VQ-VAE模型...")
+        self.vqvae_model.eval()
+        for param in self.vqvae_model.parameters():
+            param.requires_grad = False
+        print("   ✅ VQ-VAE已冻结，码本不会更新")
+
         # 创建Transformer模型
         self.transformer_model = self._create_transformer_model()
         
@@ -571,6 +578,9 @@ class TransformerTrainer:
         best_psnr = 0.0
 
         for epoch in range(self.args.num_epochs):
+            # 确保VQ-VAE始终保持eval模式（冻结状态）
+            self.vqvae_model.eval()
+
             self.transformer_model.train()
             total_loss = 0
             
