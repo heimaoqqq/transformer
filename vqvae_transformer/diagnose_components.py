@@ -140,6 +140,9 @@ class ComponentDiagnostic:
                 print("   2. 确保指向的是Transformer模型文件")
                 print("   3. VQ-VAE模型通常包含encoder/decoder权重")
                 print("   4. Transformer模型应包含transformer.transformer权重")
+                print("   5. 如果只想诊断VQ-VAE，请不要提供--transformer_path参数")
+                print(f"   6. 当前提供的路径: {self.transformer_path}")
+                print("   7. 请检查该路径是否指向正确的Transformer模型文件")
                 return None
 
             # 从checkpoint中获取模型参数（如果有的话）
