@@ -384,22 +384,41 @@ class ComponentDiagnostic:
             # 2. 量化测试
             print("2️⃣ 量化测试...")
             quantized_output = self.vqvae_model.quantize(latents)
+
+            # 处理不同的量化输出格式
+            quantized = None
+            indices = None
+
             if hasattr(quantized_output, 'quantized'):
+                # 如果是命名元组或对象
                 quantized = quantized_output.quantized
                 indices = quantized_output.indices
+            elif isinstance(quantized_output, tuple):
+                # 如果是普通元组
+                if len(quantized_output) >= 2:
+                    quantized = quantized_output[0]  # 量化特征
+                    indices = quantized_output[1]    # 索引
+                else:
+                    quantized = quantized_output[0]
+                    indices = None
             else:
+                # 如果是单个tensor
                 quantized = quantized_output
                 indices = None
-            
+
             print(f"   量化输出形状: {quantized.shape}")
+            print(f"   量化输出类型: {type(quantized_output)}")
+
             if indices is not None:
                 print(f"   索引形状: {indices.shape}")
                 print(f"   索引范围: [{indices.min().item()}, {indices.max().item()}]")
-                
+
                 # 分析码本使用
                 unique_indices = torch.unique(indices)
                 usage_ratio = len(unique_indices) / 1024
                 print(f"   码本使用率: {len(unique_indices)}/1024 ({usage_ratio:.2%})")
+            else:
+                print("   ⚠️ 未获取到量化索引，可能需要不同的访问方式")
             
             # 3. 解码测试
             print("3️⃣ 解码测试...")
