@@ -27,7 +27,7 @@ except ImportError:
     DIFFUSERS_AVAILABLE = False
     sys.exit(1)
 
-from utils.data_loader import create_micro_doppler_dataset
+from utils.data_loader import create_micro_doppler_dataset, create_datasets_with_split
 
 class VQVAETrainer:
     """VQ-VAE训练器 - 第一步"""
@@ -87,20 +87,50 @@ class VQVAETrainer:
         """训练VQ-VAE"""
         print(f"🚀 开始VQ-VAE训练...")
         
-        # 创建数据集
-        dataset = create_micro_doppler_dataset(
-            data_dir=self.args.data_dir,
-            return_user_id=False  # VQ-VAE训练不需要用户ID
-        )
-        
-        # 创建数据加载器
-        dataloader = DataLoader(
-            dataset,
-            batch_size=self.args.batch_size,
-            shuffle=True,
-            num_workers=self.args.num_workers,
-            pin_memory=True
-        )
+        # 创建数据集（带自动划分）
+        if self.args.use_validation:
+            train_dataset, val_dataset = create_datasets_with_split(
+                data_dir=self.args.data_dir,
+                train_ratio=0.8,
+                val_ratio=0.2,
+                return_user_id=False,  # VQ-VAE训练不需要用户ID
+                random_seed=42
+            )
+
+            # 创建数据加载器
+            train_dataloader = DataLoader(
+                train_dataset,
+                batch_size=self.args.batch_size,
+                shuffle=True,
+                num_workers=self.args.num_workers,
+                pin_memory=True
+            )
+
+            val_dataloader = DataLoader(
+                val_dataset,
+                batch_size=self.args.batch_size,
+                shuffle=False,
+                num_workers=self.args.num_workers,
+                pin_memory=True
+            )
+
+            dataloader = train_dataloader  # 主要训练用
+        else:
+            # 不使用验证集，使用全部数据训练
+            dataset = create_micro_doppler_dataset(
+                data_dir=self.args.data_dir,
+                return_user_id=False  # VQ-VAE训练不需要用户ID
+            )
+
+            # 创建数据加载器
+            dataloader = DataLoader(
+                dataset,
+                batch_size=self.args.batch_size,
+                shuffle=True,
+                num_workers=self.args.num_workers,
+                pin_memory=True
+            )
+            val_dataloader = None
         
         print(f"📊 数据集信息:")
         print(f"   样本数量: {len(dataset)}")
@@ -197,6 +227,12 @@ class VQVAETrainer:
                 self._save_model(epoch, avg_loss, is_best=True)
                 print(f"   ✅ 保存最佳VQ-VAE模型 (损失: {avg_loss:.4f})")
             
+            # 验证集评估
+            val_loss = None
+            if hasattr(self, 'val_dataloader') and val_dataloader is not None:
+                val_loss = self._validate(val_dataloader)
+                print(f"      验证损失: {val_loss:.4f}")
+
             # 定期保存检查点和生成样本
             if (epoch + 1) % self.args.save_every == 0:
                 self._save_model(epoch, avg_loss, is_best=False)
@@ -288,6 +324,51 @@ class VQVAETrainer:
         plt.savefig(samples_dir / f"epoch_{epoch+1:03d}.png", dpi=150, bbox_inches='tight')
         plt.close()
 
+    def _validate(self, val_dataloader):
+        """验证模型"""
+        self.vqvae_model.eval()
+
+        total_loss = 0
+        total_recon_loss = 0
+        total_vq_loss = 0
+        num_batches = 0
+
+        with torch.no_grad():
+            for batch in val_dataloader:
+                # 处理batch格式
+                if isinstance(batch, dict):
+                    images = batch['image'].to(self.device)
+                elif isinstance(batch, (list, tuple)):
+                    images = batch[0].to(self.device) if len(batch) > 0 else batch.to(self.device)
+                else:
+                    images = batch.to(self.device)
+
+                # VQ-VAE前向传播
+                encoder_output = self.vqvae_model.encode(images)
+                latents = encoder_output.latents
+
+                decoder_output = self.vqvae_model.decode(latents)
+                reconstructed = decoder_output.sample
+
+                # 计算损失
+                recon_loss = nn.functional.mse_loss(reconstructed, images)
+
+                vq_loss = 0
+                if hasattr(encoder_output, 'commit_loss') and encoder_output.commit_loss is not None:
+                    vq_loss = encoder_output.commit_loss.mean()
+
+                total_batch_loss = recon_loss + self.args.commitment_cost * vq_loss
+
+                # 更新统计
+                total_loss += total_batch_loss.item()
+                total_recon_loss += recon_loss.item()
+                if isinstance(vq_loss, torch.Tensor):
+                    total_vq_loss += vq_loss.item()
+                num_batches += 1
+
+        self.vqvae_model.train()
+        return total_loss / num_batches if num_batches > 0 else 0
+
 def main():
     parser = argparse.ArgumentParser(description="第一步：训练VQ-VAE")
     
@@ -308,6 +389,9 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=0.01, help="权重衰减")
     parser.add_argument("--num_workers", type=int, default=4, help="数据加载器工作进程数")
     parser.add_argument("--save_every", type=int, default=10, help="保存检查点间隔")
+    parser.add_argument("--use_validation", action="store_true", help="是否使用验证集")
+    parser.add_argument("--train_ratio", type=float, default=0.8, help="训练集比例")
+    parser.add_argument("--val_ratio", type=float, default=0.2, help="验证集比例")
     
     args = parser.parse_args()
     

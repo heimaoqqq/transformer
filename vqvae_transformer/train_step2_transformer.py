@@ -27,7 +27,7 @@ except ImportError:
     DIFFUSERS_AVAILABLE = False
     sys.exit(1)
 
-from utils.data_loader import create_micro_doppler_dataset
+from utils.data_loader import create_micro_doppler_dataset, create_datasets_with_split
 
 class TransformerTrainer:
     """Transformer训练器 - 第二步"""
@@ -139,20 +139,50 @@ class TransformerTrainer:
         """训练Transformer"""
         print(f"🚀 开始Transformer训练...")
         
-        # 创建数据集
-        dataset = create_micro_doppler_dataset(
-            data_dir=self.args.data_dir,
-            return_user_id=True  # Transformer训练需要用户ID
-        )
-        
-        # 创建数据加载器
-        dataloader = DataLoader(
-            dataset,
-            batch_size=self.args.batch_size,
-            shuffle=True,
-            num_workers=self.args.num_workers,
-            pin_memory=True
-        )
+        # 创建数据集（带自动划分）
+        if self.args.use_validation:
+            train_dataset, val_dataset = create_datasets_with_split(
+                data_dir=self.args.data_dir,
+                train_ratio=0.8,
+                val_ratio=0.2,
+                return_user_id=True,  # Transformer训练需要用户ID
+                random_seed=42
+            )
+
+            # 创建数据加载器
+            train_dataloader = DataLoader(
+                train_dataset,
+                batch_size=self.args.batch_size,
+                shuffle=True,
+                num_workers=self.args.num_workers,
+                pin_memory=True
+            )
+
+            val_dataloader = DataLoader(
+                val_dataset,
+                batch_size=self.args.batch_size,
+                shuffle=False,
+                num_workers=self.args.num_workers,
+                pin_memory=True
+            )
+
+            dataloader = train_dataloader  # 主要训练用
+        else:
+            # 不使用验证集，使用全部数据训练
+            dataset = create_micro_doppler_dataset(
+                data_dir=self.args.data_dir,
+                return_user_id=True  # Transformer训练需要用户ID
+            )
+
+            # 创建数据加载器
+            dataloader = DataLoader(
+                dataset,
+                batch_size=self.args.batch_size,
+                shuffle=True,
+                num_workers=self.args.num_workers,
+                pin_memory=True
+            )
+            val_dataloader = None
         
         print(f"📊 数据集信息:")
         print(f"   样本数量: {len(dataset)}")
@@ -371,6 +401,9 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=0.01, help="权重衰减")
     parser.add_argument("--num_workers", type=int, default=4, help="数据加载器工作进程数")
     parser.add_argument("--save_every", type=int, default=10, help="保存检查点间隔")
+    parser.add_argument("--use_validation", action="store_true", help="是否使用验证集")
+    parser.add_argument("--train_ratio", type=float, default=0.8, help="训练集比例")
+    parser.add_argument("--val_ratio", type=float, default=0.2, help="验证集比例")
     
     args = parser.parse_args()
     

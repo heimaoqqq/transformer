@@ -9,9 +9,12 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset
 from PIL import Image
 import torchvision.transforms as transforms
+from collections import defaultdict
+import random
+import numpy as np
 
 # 添加主项目路径以复用数据加载器
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -367,3 +370,118 @@ def create_vq_token_dataset(
             })
     
     return VQTokenDataset(token_data, max_seq_len)
+
+def create_stratified_split(dataset, train_ratio=0.8, val_ratio=0.2, random_seed=42):
+    """
+    创建分层数据集划分，确保每个用户都在训练集和验证集中
+
+    Args:
+        dataset: 数据集对象
+        train_ratio: 训练集比例
+        val_ratio: 验证集比例
+        random_seed: 随机种子
+
+    Returns:
+        train_dataset, val_dataset
+    """
+    print("🔄 执行分层数据集划分...")
+
+    # 设置随机种子
+    random.seed(random_seed)
+    np.random.seed(random_seed)
+    torch.manual_seed(random_seed)
+
+    # 按用户分组数据
+    user_indices = defaultdict(list)
+
+    for idx in range(len(dataset)):
+        try:
+            sample = dataset[idx]
+
+            # 处理不同的数据格式
+            if isinstance(sample, dict):
+                user_id = sample['user_id']
+            elif isinstance(sample, (list, tuple)) and len(sample) >= 2:
+                if isinstance(sample[1], torch.Tensor):
+                    user_id = sample[1].item()
+                else:
+                    user_id = sample[1]
+            else:
+                print(f"⚠️ 跳过未知格式的样本: {type(sample)}")
+                continue
+
+            user_indices[user_id].append(idx)
+
+        except Exception as e:
+            print(f"⚠️ 处理样本{idx}时出错: {e}")
+            continue
+
+    print(f"📊 发现 {len(user_indices)} 个用户")
+    for user_id, indices in user_indices.items():
+        print(f"   用户{user_id}: {len(indices)}个样本")
+
+    # 为每个用户分配训练集和验证集样本
+    train_indices = []
+    val_indices = []
+
+    for user_id, indices in user_indices.items():
+        # 随机打乱该用户的样本
+        random.shuffle(indices)
+
+        # 计算分割点
+        n_samples = len(indices)
+        n_train = max(1, int(n_samples * train_ratio))  # 至少1个训练样本
+        n_val = max(1, n_samples - n_train)  # 至少1个验证样本
+
+        # 如果样本太少，调整分配
+        if n_samples < 2:
+            train_indices.extend(indices)
+            val_indices.extend(indices)  # 复制到验证集
+            print(f"   ⚠️ 用户{user_id}样本太少({n_samples})，训练集和验证集共享")
+        else:
+            train_indices.extend(indices[:n_train])
+            val_indices.extend(indices[n_train:n_train + n_val])
+            print(f"   ✅ 用户{user_id}: 训练集{n_train}个, 验证集{n_val}个")
+
+    # 创建子数据集
+    train_dataset = Subset(dataset, train_indices)
+    val_dataset = Subset(dataset, val_indices)
+
+    print(f"\n📊 数据集划分完成:")
+    print(f"   总样本数: {len(dataset)}")
+    print(f"   训练集: {len(train_dataset)} ({len(train_dataset)/len(dataset)*100:.1f}%)")
+    print(f"   验证集: {len(val_dataset)} ({len(val_dataset)/len(dataset)*100:.1f}%)")
+
+    return train_dataset, val_dataset
+
+def create_datasets_with_split(data_dir, train_ratio=0.8, val_ratio=0.2, return_user_id=True, random_seed=42):
+    """
+    创建带有自动划分的数据集
+
+    Args:
+        data_dir: 数据目录
+        train_ratio: 训练集比例
+        val_ratio: 验证集比例
+        return_user_id: 是否返回用户ID
+        random_seed: 随机种子
+
+    Returns:
+        train_dataset, val_dataset
+    """
+    print("🚀 创建带有自动划分的数据集...")
+
+    # 创建完整数据集
+    full_dataset = create_micro_doppler_dataset(
+        data_dir=data_dir,
+        return_user_id=return_user_id
+    )
+
+    # 执行分层划分
+    train_dataset, val_dataset = create_stratified_split(
+        dataset=full_dataset,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
+        random_seed=random_seed
+    )
+
+    return train_dataset, val_dataset
