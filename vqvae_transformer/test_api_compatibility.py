@@ -132,42 +132,92 @@ class APICompatibilityChecker:
     def check_transformers_api(self) -> Dict[str, Any]:
         """检查transformers API兼容性"""
         print("\n🔍 检查transformers API兼容性...")
-        
+
         results = {}
-        
+
         # 1. 检查GPT2
         try:
             from transformers import GPT2Config, GPT2LMHeadModel
             results['gpt2_import'] = "SUCCESS"
             print("✅ GPT2导入成功")
-            
+
             # 检查GPT2Config参数
             sig = inspect.signature(GPT2Config.__init__)
             params = list(sig.parameters.keys())
             results['gpt2_config_params'] = params
             print(f"✅ GPT2Config参数: {len(params)} 个")
-            
-            # 测试GPT2实例化
+
+            # 测试GPT2实例化 - 重点测试交叉注意力
             try:
                 config = GPT2Config(
-                    vocab_size=1024,
-                    n_positions=256,
+                    vocab_size=1025,  # 1024 + 1个特殊token
+                    n_positions=1025,  # 1024 + 1个用户token
                     n_embd=512,
-                    n_layer=4,
-                    n_head=8
+                    n_layer=8,
+                    n_head=8,
+                    n_inner=2048,
+                    activation_function="gelu_new",
+                    resid_pdrop=0.1,
+                    embd_pdrop=0.1,
+                    attn_pdrop=0.1,
+                    layer_norm_epsilon=1e-5,
+                    initializer_range=0.02,
+                    use_cache=False,
+                    add_cross_attention=True,  # 关键：交叉注意力
+                    _name_or_path="",
                 )
                 model = GPT2LMHeadModel(config)
                 results['gpt2_instantiation'] = "SUCCESS"
                 print("✅ GPT2实例化成功")
-                
+
+                # 检查交叉注意力层是否存在
+                has_cross_attn = hasattr(model.transformer.h[0], 'crossattention')
+                results['cross_attention_exists'] = has_cross_attn
+                print(f"{'✅' if has_cross_attn else '❌'} 交叉注意力层: {'存在' if has_cross_attn else '不存在'}")
+
+                # 测试交叉注意力前向传播
+                if has_cross_attn:
+                    try:
+                        batch_size = 2
+                        seq_len = 10
+                        input_ids = torch.randint(0, 1024, (batch_size, seq_len))
+                        attention_mask = torch.ones_like(input_ids)
+                        encoder_hidden_states = torch.randn(batch_size, 8, 512)
+                        encoder_attention_mask = torch.ones(batch_size, 8)
+
+                        with torch.no_grad():
+                            # 不使用交叉注意力
+                            output1 = model(input_ids=input_ids, attention_mask=attention_mask)
+
+                            # 使用交叉注意力
+                            output2 = model(
+                                input_ids=input_ids,
+                                attention_mask=attention_mask,
+                                encoder_hidden_states=encoder_hidden_states,
+                                encoder_attention_mask=encoder_attention_mask,
+                            )
+
+                        # 检查输出差异
+                        diff = torch.abs(output1.logits - output2.logits).mean().item()
+                        results['cross_attention_effect'] = diff
+
+                        if diff > 1e-6:
+                            print(f"✅ 交叉注意力有效果: 差异 {diff:.6f}")
+                        else:
+                            print(f"❌ 交叉注意力无效果: 差异 {diff:.6f}")
+
+                    except Exception as e:
+                        results['cross_attention_test'] = f"ERROR: {e}"
+                        print(f"❌ 交叉注意力测试失败: {e}")
+
             except Exception as e:
                 results['gpt2_instantiation'] = f"ERROR: {e}"
                 print(f"❌ GPT2实例化失败: {e}")
-                
+
         except ImportError as e:
             results['gpt2_import'] = f"ERROR: {e}"
             print(f"❌ GPT2导入失败: {e}")
-        
+
         # 2. 检查Tokenizer
         try:
             from transformers import AutoTokenizer
@@ -176,26 +226,27 @@ class APICompatibilityChecker:
         except ImportError as e:
             results['tokenizer_import'] = f"ERROR: {e}"
             print(f"❌ AutoTokenizer导入失败: {e}")
-        
+
         return results
     
     def check_custom_models_api(self) -> Dict[str, Any]:
         """检查自定义模型API兼容性"""
         print("\n🔍 检查自定义模型API兼容性...")
-        
+
         results = {}
-        
+
+        # 1. 检查VQ-VAE模型
         try:
             from models.vqvae_model import MicroDopplerVQVAE
             results['custom_vqvae_import'] = "SUCCESS"
             print("✅ MicroDopplerVQVAE导入成功")
-            
+
             # 检查构造函数参数
             sig = inspect.signature(MicroDopplerVQVAE.__init__)
             params = list(sig.parameters.keys())
             results['custom_vqvae_params'] = params
             print(f"✅ MicroDopplerVQVAE参数: {len(params)} 个")
-            
+
             # 测试实例化
             try:
                 model = MicroDopplerVQVAE(
@@ -207,20 +258,111 @@ class APICompatibilityChecker:
                 )
                 results['custom_vqvae_instantiation'] = "SUCCESS"
                 print("✅ MicroDopplerVQVAE实例化成功")
-                
+
                 # 检查方法
                 methods = [method for method in dir(model) if not method.startswith('_')]
                 results['custom_vqvae_methods'] = methods
                 print(f"✅ MicroDopplerVQVAE方法: {len(methods)} 个")
-                
+
             except Exception as e:
                 results['custom_vqvae_instantiation'] = f"ERROR: {e}"
                 print(f"❌ MicroDopplerVQVAE实例化失败: {e}")
-                
+
         except ImportError as e:
             results['custom_vqvae_import'] = f"ERROR: {e}"
             print(f"❌ MicroDopplerVQVAE导入失败: {e}")
-        
+
+        # 2. 检查Transformer模型
+        try:
+            from models.transformer_model import MicroDopplerTransformer
+            results['custom_transformer_import'] = "SUCCESS"
+            print("✅ MicroDopplerTransformer导入成功")
+
+            # 测试实例化
+            try:
+                transformer = MicroDopplerTransformer(
+                    vocab_size=1024,
+                    max_seq_len=1024,
+                    num_users=31,
+                    n_embd=512,
+                    n_layer=8,
+                    n_head=8,
+                    dropout=0.1,
+                    use_cross_attention=True,
+                )
+                results['custom_transformer_instantiation'] = "SUCCESS"
+                print("✅ MicroDopplerTransformer实例化成功")
+
+                # 测试前向传播
+                try:
+                    batch_size = 2
+                    user_ids = torch.tensor([1, 5])
+                    token_sequences = torch.randint(0, 1024, (batch_size, 1024))
+
+                    with torch.no_grad():
+                        outputs = transformer(user_ids=user_ids, token_sequences=token_sequences)
+
+                    results['transformer_forward'] = {
+                        'loss': outputs.loss.item(),
+                        'logits_shape': list(outputs.logits.shape),
+                        'loss_valid': not (torch.isnan(outputs.loss) or torch.isinf(outputs.loss))
+                    }
+
+                    print(f"✅ Transformer前向传播成功")
+                    print(f"   损失: {outputs.loss.item():.4f}")
+                    print(f"   logits形状: {outputs.logits.shape}")
+
+                    # 检查损失是否合理
+                    if torch.isnan(outputs.loss) or torch.isinf(outputs.loss):
+                        print(f"❌ 损失值无效: {outputs.loss.item()}")
+                    elif outputs.loss.item() > 20:
+                        print(f"⚠️ 损失值过高: {outputs.loss.item():.4f}")
+                    else:
+                        print(f"✅ 损失值正常")
+
+                    # 测试生成
+                    try:
+                        with torch.no_grad():
+                            generated = transformer.generate(
+                                user_ids=torch.tensor([1]),
+                                max_length=10,  # 短序列测试
+                                temperature=1.0,
+                                do_sample=True,
+                            )
+
+                        results['transformer_generation'] = {
+                            'generated_shape': list(generated.shape),
+                            'token_range': [generated.min().item(), generated.max().item()],
+                            'valid_tokens': (generated.min().item() >= 0 and generated.max().item() < 1024)
+                        }
+
+                        print(f"✅ Transformer生成测试成功")
+                        print(f"   生成形状: {generated.shape}")
+                        print(f"   Token范围: [{generated.min().item()}, {generated.max().item()}]")
+
+                        if generated.min().item() < 0 or generated.max().item() >= 1024:
+                            print(f"❌ 生成的token超出有效范围")
+                        else:
+                            print(f"✅ 生成的token在有效范围内")
+
+                    except Exception as e:
+                        results['transformer_generation'] = f"ERROR: {e}"
+                        print(f"❌ Transformer生成测试失败: {e}")
+
+                except Exception as e:
+                    results['transformer_forward'] = f"ERROR: {e}"
+                    print(f"❌ Transformer前向传播失败: {e}")
+
+            except Exception as e:
+                results['custom_transformer_instantiation'] = f"ERROR: {e}"
+                print(f"❌ MicroDopplerTransformer实例化失败: {e}")
+                import traceback
+                traceback.print_exc()
+
+        except ImportError as e:
+            results['custom_transformer_import'] = f"ERROR: {e}"
+            print(f"❌ MicroDopplerTransformer导入失败: {e}")
+
         return results
     
     def check_forward_compatibility(self) -> Dict[str, Any]:

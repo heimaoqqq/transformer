@@ -57,15 +57,18 @@ except ImportError:
         
         def __getitem__(self, idx):
             item = self.data[idx]
-            
+
             # 加载图像
             image = Image.open(item['image_path']).convert('RGB')
-            
+
             if self.transform:
                 image = self.transform(image)
-            
+
             if self.return_user_id:
-                return image, item['user_id']
+                return {
+                    'image': image,
+                    'user_id': item['user_id']
+                }
             else:
                 return image
 

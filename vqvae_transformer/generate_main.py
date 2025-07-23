@@ -45,79 +45,133 @@ if not (VQVAE_AVAILABLE and TRANSFORMER_AVAILABLE):
 class VQVAETransformerGenerator:
     """VQ-VAE + Transformer 生成器"""
     
-    def __init__(self, model_dir, device="auto"):
+    def __init__(self, model_dir, device="auto", vqvae_path=None, transformer_path=None):
         self.model_dir = Path(model_dir)
-        
+        self.vqvae_path = Path(vqvae_path) if vqvae_path else None
+        self.transformer_path = Path(transformer_path) if transformer_path else None
+
         # 设置设备
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
-        
+
         print(f"🎮 使用设备: {self.device}")
-        
+
         # 加载模型
         self.vqvae_model = self._load_vqvae()
         self.transformer_model = self._load_transformer()
-        
+
         print(f"✅ 模型加载完成")
     
     def _load_vqvae(self):
         """加载VQ-VAE模型"""
-        vqvae_path = self.model_dir / "vqvae"
-        
+        if self.vqvae_path:
+            vqvae_path = self.vqvae_path
+        else:
+            vqvae_path = self.model_dir / "vqvae"
+
         print(f"📦 加载VQ-VAE: {vqvae_path}")
-        
-        checkpoint_path = vqvae_path / "best_model.pth"
-        if not checkpoint_path.exists():
-            checkpoint_path = vqvae_path / "final_model.pth"
-        
-        if not checkpoint_path.exists():
-            raise FileNotFoundError(f"未找到VQ-VAE模型: {vqvae_path}")
-        
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        
-        # 重建模型
-        model = MicroDopplerVQVAE(
-            num_vq_embeddings=checkpoint['args'].codebook_size,
-            commitment_cost=checkpoint['args'].commitment_cost,
-            ema_decay=checkpoint['args'].ema_decay,
-        )
-        model.load_state_dict(checkpoint['model_state_dict'])
-        
-        model.to(self.device)
-        model.eval()
-        return model
+
+        # 尝试diffusers格式加载
+        try:
+            if (vqvae_path / "config.json").exists():
+                print("   检测到diffusers格式，使用from_pretrained加载...")
+                model = MicroDopplerVQVAE.from_pretrained(str(vqvae_path))
+                model.to(self.device)
+                model.eval()
+                return model
+        except Exception as e:
+            print(f"   diffusers格式加载失败: {e}")
+
+        # 尝试checkpoint格式加载
+        checkpoint_path = None
+        if vqvae_path.is_file() and vqvae_path.suffix == '.pth':
+            checkpoint_path = vqvae_path
+        else:
+            for filename in ["best_model.pth", "final_model.pth", "model.pth"]:
+                potential_path = vqvae_path / filename
+                if potential_path.exists():
+                    checkpoint_path = potential_path
+                    break
+
+        if checkpoint_path and checkpoint_path.exists():
+            print(f"   使用checkpoint格式: {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+            # 重建模型
+            model = MicroDopplerVQVAE(
+                num_vq_embeddings=checkpoint['args'].codebook_size,
+                commitment_cost=checkpoint['args'].commitment_cost,
+                ema_decay=getattr(checkpoint['args'], 'ema_decay', 0.99),
+            )
+            model.load_state_dict(checkpoint['model_state_dict'])
+
+            model.to(self.device)
+            model.eval()
+            return model
+
+        raise FileNotFoundError(f"未找到VQ-VAE模型: {vqvae_path}")
     
     def _load_transformer(self):
         """加载Transformer模型"""
-        transformer_path = self.model_dir / "transformer"
-        
-        print(f"📦 加载Transformer: {transformer_path}")
-        
-        checkpoint_path = transformer_path / "best_model.pth"
+        if self.transformer_path:
+            # 使用指定的Transformer路径
+            if self.transformer_path.is_file():
+                checkpoint_path = self.transformer_path
+            else:
+                checkpoint_path = self.transformer_path / "best_model.pth"
+                if not checkpoint_path.exists():
+                    checkpoint_path = self.transformer_path / "final_model.pth"
+        else:
+            # 使用默认的目录结构
+            transformer_path = self.model_dir / "transformer"
+            checkpoint_path = transformer_path / "best_model.pth"
+            if not checkpoint_path.exists():
+                checkpoint_path = transformer_path / "final_model.pth"
+
+        print(f"📦 加载Transformer: {checkpoint_path}")
+
         if not checkpoint_path.exists():
-            checkpoint_path = transformer_path / "final_model.pth"
-        
-        if not checkpoint_path.exists():
-            raise FileNotFoundError(f"未找到Transformer模型: {transformer_path}")
-        
+            raise FileNotFoundError(f"未找到Transformer模型: {checkpoint_path}")
+
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        args = checkpoint['args']
-        
-        # 重建模型
+
+        # 检查模型类型
+        state_dict = checkpoint.get('model_state_dict', checkpoint)
+
+        # 检查是否是VQ-VAE模型（错误的文件）
+        vqvae_keys = ['encoder.conv_in.weight', 'decoder.conv_in.weight', 'quantize.embedding.weight']
+        transformer_keys = ['transformer.transformer.wte.weight', 'user_encoder.user_embedding.weight']
+
+        is_vqvae = any(key in state_dict for key in vqvae_keys)
+        is_transformer = any(key in state_dict for key in transformer_keys)
+
+        if is_vqvae and not is_transformer:
+            raise ValueError(
+                f"❌ 检测到VQ-VAE模型权重，但期望Transformer模型！\n"
+                f"   文件路径: {checkpoint_path}\n"
+                f"   请检查您的Transformer模型路径是否正确。\n"
+                f"   当前文件包含的是VQ-VAE模型权重，不是Transformer权重。"
+            )
+
+        args = checkpoint.get('args')
+        if args is None:
+            raise ValueError(f"Checkpoint中缺少args信息: {checkpoint_path}")
+
+        # 重建模型 - 添加默认值处理
         model = MicroDopplerTransformer(
-            vocab_size=args.codebook_size,
-            max_seq_len=getattr(args, 'max_seq_len', 256),
-            num_users=args.num_users,
-            n_embd=args.n_embd,
-            n_layer=args.n_layer,
-            n_head=args.n_head,
-            dropout=args.dropout,
-            use_cross_attention=args.use_cross_attention,
+            vocab_size=getattr(args, 'codebook_size', 1024),
+            max_seq_len=getattr(args, 'max_seq_len', 1024),
+            num_users=getattr(args, 'num_users', 31),  # 默认31个用户
+            n_embd=getattr(args, 'n_embd', 512),
+            n_layer=getattr(args, 'n_layer', 8),
+            n_head=getattr(args, 'n_head', 8),
+            dropout=getattr(args, 'dropout', 0.1),
+            use_cross_attention=getattr(args, 'use_cross_attention', True),
         )
-        
-        model.load_state_dict(checkpoint['model_state_dict'])
+
+        model.load_state_dict(state_dict)
         model.to(self.device)
         model.eval()
         return model
@@ -176,37 +230,48 @@ class VQVAETransformerGenerator:
     
     def _tokens_to_image(self, tokens):
         """将token序列转换为图像"""
-        # 重塑为2D
-        seq_len = len(tokens)
-        latent_size = int(np.sqrt(seq_len))
-        
-        if latent_size * latent_size != seq_len:
-            # 如果不是完全平方数，截断或填充
-            target_len = latent_size * latent_size
-            if seq_len > target_len:
-                tokens = tokens[:target_len]
+        # 🔧 修复：正确处理用户token和序列长度
+
+        # 1. 移除用户token（如果存在）
+        if len(tokens) == 1025:
+            # 第一个token是用户token，移除它
+            image_tokens = tokens[1:]
+            print(f"   移除用户token，剩余图像token: {len(image_tokens)}")
+        elif len(tokens) == 1024:
+            # 已经是纯图像token
+            image_tokens = tokens
+        else:
+            # 调整到1024个token
+            if len(tokens) > 1024:
+                image_tokens = tokens[:1024]
+                print(f"   截断token序列到1024")
             else:
-                pad_tokens = torch.full((target_len - seq_len,), 0, device=tokens.device)
-                tokens = torch.cat([tokens, pad_tokens])
-        
-        # 重塑为2D
-        tokens_2d = tokens.view(1, latent_size, latent_size)
-        
-        # 获取码本嵌入
+                # 填充到1024
+                pad_tokens = torch.full((1024 - len(tokens),), 0, device=tokens.device)
+                image_tokens = torch.cat([tokens, pad_tokens])
+                print(f"   填充token序列到1024")
+
+        # 2. 重塑为32x32（VQ-VAE的实际输出尺寸）
+        tokens_2d = image_tokens.view(32, 32)
+
+        # 3. 获取码本嵌入并解码
         with torch.no_grad():
             # 确保token索引在有效范围内
             tokens_2d = torch.clamp(tokens_2d, 0, self.vqvae_model.quantize.n_embed - 1)
-            
+
+            # 添加batch维度
+            batch_tokens = tokens_2d.unsqueeze(0)  # [1, 32, 32]
+
             # 获取量化向量
-            quantized_latents = self.vqvae_model.quantize.embedding(tokens_2d)
-            quantized_latents = quantized_latents.permute(0, 3, 1, 2)  # [B, C, H, W]
-            
+            quantized_latents = self.vqvae_model.quantize.embedding(batch_tokens)  # [1, 32, 32, 256]
+            quantized_latents = quantized_latents.permute(0, 3, 1, 2)  # [1, 256, 32, 32]
+
             # 解码为图像
             generated_image = self.vqvae_model.decode(quantized_latents, force_not_quantize=True)
-            
+
             # 归一化到[0,1]
             image = (generated_image.squeeze(0) * 0.5 + 0.5).clamp(0, 1)
-            
+
             return image
     
     def generate_dataset(
@@ -290,6 +355,10 @@ def main():
     # 模型参数
     parser.add_argument("--model_dir", type=str, required=True,
                        help="模型目录路径")
+    parser.add_argument("--vqvae_path", type=str, default=None,
+                       help="VQ-VAE模型路径（可选，如果不在默认位置）")
+    parser.add_argument("--transformer_path", type=str, default=None,
+                       help="Transformer模型路径（可选，如果不在默认位置）")
     parser.add_argument("--output_dir", type=str, default="generated_images",
                        help="输出目录")
     
@@ -319,7 +388,12 @@ def main():
     print("=" * 50)
     
     # 创建生成器
-    generator = VQVAETransformerGenerator(args.model_dir, args.device)
+    generator = VQVAETransformerGenerator(
+        model_dir=args.model_dir,
+        device=args.device,
+        vqvae_path=args.vqvae_path,
+        transformer_path=args.transformer_path
+    )
     
     if args.visualize_only:
         # 只可视化

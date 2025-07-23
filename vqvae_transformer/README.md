@@ -26,6 +26,8 @@ vqvae_transformer/
 │   └── metrics.py                      # 评估指标
 ├── validation/                         # 验证脚本
 ├── inference/                          # 推理脚本
+├── evaluate_vqvae_quality.py           # 🔍 VQ-VAE质量全面评估工具
+├── example_evaluate_vqvae.py           # 📖 评估工具使用示例
 ├── setup_vqvae_environment.py          # 🔧 VQ-VAE阶段环境配置
 ├── setup_transformer_environment.py    # 🔧 Transformer阶段环境配置
 ├── test_cross_environment_compatibility.py # 🧪 跨环境兼容性测试
@@ -488,6 +490,86 @@ python test_unified_environment.py
 python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
 python -c "import diffusers; print(f'Diffusers: {diffusers.__version__}')"
 python -c "import transformers; print(f'Transformers: {transformers.__version__}')"
+```
+
+## 🔍 VQ-VAE质量全面评估
+
+### 📊 评估工具特点
+
+我们提供了一个全面的VQ-VAE质量评估工具，能够从多个维度准确判断模型质量：
+
+- ✅ **重建质量评估**: PSNR, SSIM, LPIPS, MSE, MAE等多项指标
+- ✅ **码本质量评估**: 使用率、熵、聚类质量、一致性检查
+- ✅ **潜在空间评估**: 统计特性、用户分离度、分布分析
+- ✅ **综合质量评分**: 0-100分制，直观判断模型优劣
+- ✅ **可视化分析**: 自动生成分布图、PCA投影、使用统计图
+- ✅ **详细报告**: 文本报告 + JSON结果，便于分析和比较
+
+### 🚀 快速使用
+
+```bash
+# 基本评估
+python evaluate_vqvae_quality.py \
+    --model_path outputs/vqvae/best_model.pth \
+    --data_dir /path/to/your/dataset \
+    --output_dir outputs/vqvae_evaluation
+
+# 完整参数
+python evaluate_vqvae_quality.py \
+    --model_path outputs/vqvae/best_model.pth \
+    --data_dir /path/to/your/dataset \
+    --output_dir outputs/vqvae_evaluation \
+    --resolution 128 \
+    --batch_size 16 \
+    --max_samples 1000 \
+    --num_workers 4
+```
+
+### 📋 评估结果解读
+
+#### 质量分数等级
+- **90-100分 (A级)**: 优秀，可用于生产环境
+- **80-89分 (B级)**: 良好，可考虑部署
+- **70-79分 (C级)**: 及格，需要优化
+- **60-69分 (D级)**: 较差，需要重新训练
+- **<60分 (F级)**: 失败，需要调整架构
+
+#### 重建质量指标
+- **PSNR**: >30dB优秀，25-30dB良好，20-25dB一般，<20dB较差
+- **SSIM**: >0.9优秀，0.8-0.9良好，0.7-0.8一般，<0.7较差
+- **LPIPS**: <0.1优秀，0.1-0.2良好，0.2-0.3一般，>0.3较差
+
+#### 码本质量指标
+- **使用率**: >70%优秀，50-70%良好，30-50%一般，<30%存在坍缩风险
+- **归一化熵**: >0.8分布均匀，0.6-0.8较均匀，<0.6不均匀
+
+### 📁 输出文件说明
+
+```
+outputs/vqvae_evaluation/
+├── comprehensive_report.txt        # 详细文本报告
+├── evaluation_results.json         # JSON格式结果
+├── reconstruction_metrics.png      # 重建指标分布图
+├── codebook_analysis.png          # 码本分析图
+├── latent_space_analysis.png      # 潜在空间分析图
+└── reconstruction_samples/         # 重建样本对比
+    ├── batch_0000.png
+    ├── batch_0001.png
+    └── ...
+```
+
+### 🔧 常见问题和解决方案
+
+1. **重建质量差** → 增加模型容量，调整损失函数权重
+2. **码本坍缩** → 调整EMA衰减率，增加commitment权重
+3. **潜在空间稀疏** → 检查激活函数，调整正则化
+4. **用户分离度低** → 增加用户特征，调整架构
+
+### 📖 使用示例
+
+查看详细使用示例：
+```bash
+python example_evaluate_vqvae.py
 ```
 
 ## 📄 许可证

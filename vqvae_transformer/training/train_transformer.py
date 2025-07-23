@@ -557,9 +557,18 @@ class TransformerTrainer:
             
             pbar = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{self.args.num_epochs}")
             
-            for batch_idx, (images, user_ids) in enumerate(pbar):
-                images = images.to(self.device)
-                user_ids = user_ids.to(self.device)
+            for batch_idx, batch in enumerate(pbar):
+                # 处理不同的batch格式
+                if isinstance(batch, dict):
+                    images = batch['image'].to(self.device)
+                    user_ids = batch['user_id'].to(self.device)
+                elif isinstance(batch, (list, tuple)) and len(batch) == 2:
+                    images, user_ids = batch
+                    images = images.to(self.device)
+                    user_ids = user_ids.to(self.device)
+                else:
+                    print(f"❌ 未知的batch格式: {type(batch)}")
+                    continue
 
                 # 用户ID范围[1,31]直接使用，嵌入层已调整为支持这个范围
                 
@@ -575,9 +584,9 @@ class TransformerTrainer:
                         print(f"❌ Token值超出范围: [{min_token}, {max_token}], 跳过此批次")
                         continue
 
-                    # 展平为序列 [B, H*W] - 对于128x128图像，8倍下采样后是16x16=256
+                    # 展平为序列 [B, H*W] - 对于128x128图像，4倍下采样后是32x32=1024
                     batch_size = tokens.shape[0]
-                    tokens = tokens.view(batch_size, -1)  # [B, 256]
+                    tokens = tokens.view(batch_size, -1)  # [B, 1024]
                 
                 # Transformer训练
                 self.optimizer.zero_grad()
@@ -698,12 +707,21 @@ class TransformerTrainer:
         print("🔍 开始模型评估...")
 
         with torch.no_grad():
-            for batch_idx, (images, user_ids) in enumerate(dataloader):
+            for batch_idx, batch in enumerate(dataloader):
                 if batch_idx >= 50:  # 限制评估样本数量
                     break
 
-                images = images.to(self.device)
-                user_ids = user_ids.to(self.device)
+                # 处理不同的batch格式
+                if isinstance(batch, dict):
+                    images = batch['image'].to(self.device)
+                    user_ids = batch['user_id'].to(self.device)
+                elif isinstance(batch, (list, tuple)) and len(batch) == 2:
+                    images, user_ids = batch
+                    images = images.to(self.device)
+                    user_ids = user_ids.to(self.device)
+                else:
+                    print(f"❌ 未知的batch格式: {type(batch)}")
+                    continue
 
                 # 检查token值范围
                 encoded = self.vqvae_model.encode(images, return_dict=True)
@@ -1088,7 +1106,17 @@ class TransformerTrainer:
                 if i >= 10:  # 只检查前10个batch
                     break
 
-                images = batch['image'].to(self.device)
+                # 处理不同的batch格式
+                if isinstance(batch, dict):
+                    # 字典格式
+                    images = batch['image'].to(self.device)
+                elif isinstance(batch, (list, tuple)) and len(batch) == 2:
+                    # 元组格式 (image, user_id)
+                    images, user_ids = batch
+                    images = images.to(self.device)
+                else:
+                    print(f"   ⚠️ 未知的batch格式: {type(batch)}")
+                    continue
 
                 # VQ-VAE编码和解码
                 encoded = self.vqvae_model.encode(images)
