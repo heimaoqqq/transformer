@@ -369,21 +369,35 @@ print("VQ-VAE测试成功")
 import torch
 from diffusers import Transformer2DModel
 
-# 创建测试Transformer
-model = Transformer2DModel(
-    num_attention_heads=8,
-    attention_head_dim=64,
-    in_channels=4,
-    num_layers=4,
-    dropout=0.1,
-    norm_num_groups=32,
-    activation_fn="gelu",
-)
+# 创建测试Transformer (使用最小参数集，确保兼容性)
+try:
+    model = Transformer2DModel(
+        num_attention_heads=4,
+        attention_head_dim=32,
+        in_channels=8,  # 使用8，可以被多个group数整除
+        num_layers=2,
+        dropout=0.0,
+        norm_num_groups=8,  # 8能被8整除
+        activation_fn="gelu",
+    )
 
-# 测试前向传播
-x = torch.randn(1, 4, 16, 16)
-output = model(x)
-print("Transformer测试成功")
+    # 测试前向传播
+    x = torch.randn(1, 8, 8, 8)  # 匹配in_channels=8
+    output = model(x)
+    print("Transformer测试成功")
+except Exception as e:
+    # 如果还是失败，尝试更简单的配置
+    print(f"第一次尝试失败: {e}")
+    model = Transformer2DModel(
+        num_attention_heads=2,
+        attention_head_dim=16,
+        in_channels=4,
+        num_layers=1,
+        norm_num_groups=4,  # 4能被4整除
+    )
+    x = torch.randn(1, 4, 4, 4)
+    output = model(x)
+    print("Transformer测试成功(简化配置)")
 """
 
         result = subprocess.run([
@@ -444,9 +458,15 @@ def main():
     print("基于diffusers标准组件的完整实现")
     print("=" * 60)
 
+    def install_pillow():
+        """单独安装Pillow"""
+        print("🖼️ 安装Pillow...")
+        return run_command("pip install pillow>=8.0.0", "安装Pillow")
+
     steps = [
         ("安装PyTorch", install_pytorch),
         ("安装核心依赖", install_core_dependencies),
+        ("安装Pillow", install_pillow),
         ("安装额外依赖", install_additional_dependencies),
         ("测试环境", test_unified_environment),
         ("检查包版本", check_package_versions),
