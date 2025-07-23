@@ -32,7 +32,7 @@ micro-doppler-generation/
 │   │   └── transformer_model.py # 条件Transformer
 │   ├── training/             # 训练脚本
 │   │   ├── train_vqvae.py   # VQ-VAE训练
-│   │   └── train_transformer.py # Transformer训练
+│   │   └── train_transformer.py # Transformer训练 (已修复)
 │   ├── inference/            # 推理脚本
 │   │   └── generate.py      # 图像生成
 │   ├── validation/           # 验证框架
@@ -47,6 +47,7 @@ micro-doppler-generation/
 │   ├── check_environment.py # 环境检查器
 │   ├── requirements.txt     # 独立依赖管理
 │   └── README.md            # VQ-VAE方案详细说明
+├── train_improved.py          # 🔧 改进的训练脚本 (修复生成模式崩溃)
 └── README.md                 # 本文件
 ```
 
@@ -167,6 +168,29 @@ python ultimate_fix_kaggle.py # 修复Kaggle环境
 - **内存不足**: 降低batch_size或使用梯度累积
 - **生成质量差**: 调整学习率和训练轮数
 - **用户特征不明显**: 增加条件权重或用户嵌入维度
+
+### 🚨 生成模式崩溃问题 (已修复)
+如果生成的图像充满噪声且用户间差异很小：
+
+**问题症状**:
+- 生成图像充满高频噪声
+- 不同用户生成的图像几乎相同
+- 不同epoch生成结果无变化
+- 缺乏清晰的时频结构
+
+**修复方案** (已集成到 `train_improved.py`):
+```bash
+# 使用改进的训练脚本
+python train_improved.py
+```
+
+**修复措施**:
+- ✅ **空间一致性损失**: 鼓励相邻token的相似性
+- ✅ **Top-k采样策略**: 避免极端token选择
+- ✅ **降低生成温度**: 减少随机性
+- ✅ **VQ-VAE质量检查**: 分析码本使用率
+- ✅ **模型参数优化**: 减小复杂度，增加正则化
+- ✅ **保守学习率**: 更稳定的训练过程
 
 ## 📚 详细文档
 
