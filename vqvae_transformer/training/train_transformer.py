@@ -839,7 +839,7 @@ class TransformerTrainer:
                     top_k_logits, top_k_indices = torch.topk(next_token_logits, k, dim=-1)
 
                     # 在top-k中采样
-                    top_k_probs = F.softmax(top_k_logits, dim=-1)
+                    top_k_probs = torch.nn.functional.softmax(top_k_logits, dim=-1)
                     sampled_indices = torch.multinomial(top_k_probs, num_samples=1)  # [batch_size, 1]
                     next_token = torch.gather(top_k_indices, -1, sampled_indices)  # [batch_size, 1]
 
@@ -945,14 +945,14 @@ class TransformerTrainer:
 
             # 确保形状匹配
             if orig.shape != gen.shape:
-                gen = F.interpolate(gen, size=orig.shape[-2:], mode='bilinear', align_corners=False)
+                gen = torch.nn.functional.interpolate(gen, size=orig.shape[-2:], mode='bilinear', align_corners=False)
 
             # 归一化到[0,1]
             orig = (orig + 1) / 2  # 从[-1,1]到[0,1]
             gen = (gen + 1) / 2
 
             # 计算MSE
-            mse = F.mse_loss(gen, orig)
+            mse = torch.nn.functional.mse_loss(gen, orig)
 
             # 计算PSNR
             if mse > 0:
