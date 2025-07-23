@@ -1119,25 +1119,21 @@ class TransformerTrainer:
                     continue
 
                 # VQ-VAE编码和解码
-                encoded = self.vqvae_model.encode(images)
-                if hasattr(encoded, 'latents'):
+                encoded = self.vqvae_model.encode(images, return_dict=True)
+
+                # 处理编码结果
+                if isinstance(encoded, dict):
+                    latents = encoded['latents']
+                    indices = encoded['encoding_indices']
+                elif hasattr(encoded, 'latents'):
                     latents = encoded.latents
+                    indices = getattr(encoded, 'encoding_indices', None)
                 else:
                     latents = encoded
-
-                # 量化
-                quantized_latents = self.vqvae_model.quantize(latents)
-                if hasattr(quantized_latents, 'quantized'):
-                    quantized = quantized_latents.quantized
-                    indices = quantized_latents.indices
-                else:
-                    quantized = quantized_latents
                     indices = None
 
-                # 解码
-                reconstructed = self.vqvae_model.decode(quantized)
-                if hasattr(reconstructed, 'sample'):
-                    reconstructed = reconstructed.sample
+                # 解码（跳过重新量化，因为latents已经是量化后的）
+                reconstructed = self.vqvae_model.decode(latents, force_not_quantize=True)
 
                 # 计算重建误差
                 mse = F.mse_loss(reconstructed, images)
