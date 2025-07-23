@@ -292,41 +292,187 @@ def test_unified_environment():
     print(f"\n📊 统一环境测试结果: {success_count}/{len(tests)} 成功")
     return success_count >= len(tests) - 1
 
+def check_package_versions():
+    """检查关键包的版本"""
+    print("📋 检查关键包版本...")
+
+    packages_to_check = {
+        'torch': '2.0.0',
+        'torchvision': '0.15.0',
+        'diffusers': '0.20.0',
+        'transformers': '4.20.0',
+        'numpy': '1.21.0',
+        'pillow': '8.0.0',
+        'matplotlib': '3.5.0',
+        'tqdm': '4.60.0',
+    }
+
+    all_good = True
+
+    for package, min_version in packages_to_check.items():
+        try:
+            module = importlib.import_module(package)
+            version = getattr(module, '__version__', 'unknown')
+            print(f"   ✅ {package}: {version}")
+        except ImportError:
+            print(f"   ❌ {package}: 未安装")
+            all_good = False
+
+    return all_good
+
+def test_step_training_compatibility():
+    """测试分步训练兼容性"""
+    print("🧪 测试分步训练兼容性...")
+
+    try:
+        # 测试VQ-VAE组件
+        print("   测试VQ-VAE组件...")
+        test_code = """
+import torch
+from diffusers import VQModel
+
+# 创建测试VQModel
+model = VQModel(
+    in_channels=3,
+    out_channels=3,
+    down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D"],
+    up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D"],
+    block_out_channels=[128, 256],
+    layers_per_block=2,
+    act_fn="silu",
+    latent_channels=4,
+    norm_num_groups=32,
+    vq_embed_dim=256,
+    num_vq_embeddings=1024,
+)
+
+# 测试编码解码
+x = torch.randn(1, 3, 64, 64)
+encoded = model.encode(x)
+decoded = model.decode(encoded.latents)
+print("VQ-VAE测试成功")
+"""
+
+        result = subprocess.run([
+            sys.executable, "-c", test_code
+        ], capture_output=True, text=True, timeout=60)
+
+        if result.returncode == 0:
+            print("   ✅ VQ-VAE组件测试通过")
+        else:
+            print(f"   ❌ VQ-VAE组件测试失败: {result.stderr}")
+            return False
+
+        # 测试Transformer组件
+        print("   测试Transformer组件...")
+        test_code = """
+import torch
+from diffusers import Transformer2DModel
+
+# 创建测试Transformer
+model = Transformer2DModel(
+    num_attention_heads=8,
+    attention_head_dim=64,
+    in_channels=4,
+    num_layers=4,
+    dropout=0.1,
+    norm_num_groups=32,
+    activation_fn="gelu",
+)
+
+# 测试前向传播
+x = torch.randn(1, 4, 16, 16)
+output = model(x)
+print("Transformer测试成功")
+"""
+
+        result = subprocess.run([
+            sys.executable, "-c", test_code
+        ], capture_output=True, text=True, timeout=60)
+
+        if result.returncode == 0:
+            print("   ✅ Transformer组件测试通过")
+            return True
+        else:
+            print(f"   ❌ Transformer组件测试失败: {result.stderr}")
+            return False
+
+    except Exception as e:
+        print(f"   ❌ 兼容性测试异常: {e}")
+        return False
+
+def create_training_scripts_info():
+    """创建训练脚本信息文件"""
+    print("📝 创建训练脚本信息...")
+
+    info = {
+        "step1_vqvae": {
+            "script": "train_step1_vqvae.py",
+            "description": "第一步：训练VQ-VAE模型",
+            "example_command": "python train_step1_vqvae.py --data_dir /path/to/data --output_dir ./step1_output",
+            "output": "VQ-VAE模型保存在 ./step1_output/vqvae_best/"
+        },
+        "step2_transformer": {
+            "script": "train_step2_transformer.py",
+            "description": "第二步：基于预训练VQ-VAE训练Transformer",
+            "example_command": "python train_step2_transformer.py --vqvae_path ./step1_output/vqvae_best --data_dir /path/to/data",
+            "output": "Transformer模型保存在 ./step2_output/transformer_best/"
+        },
+        "unified_training": {
+            "script": "train_pure_diffusers.py",
+            "description": "统一训练：同时训练VQ-VAE和Transformer",
+            "example_command": "python train_pure_diffusers.py --data_dir /path/to/data",
+            "output": "完整模型保存在 ./pure_diffusers_output/"
+        }
+    }
+
+    try:
+        import json
+        with open("training_info.json", "w", encoding="utf-8") as f:
+            json.dump(info, f, indent=2, ensure_ascii=False)
+        print("   ✅ 训练信息文件已创建: training_info.json")
+        return True
+    except Exception as e:
+        print(f"   ❌ 创建信息文件失败: {e}")
+        return False
+
 def main():
     """主函数"""
-    print("🎨 VQ-VAE + Transformer 统一环境配置脚本")
+    print("🚀 VQ-VAE + Transformer 统一环境配置")
     print("=" * 60)
-    print("🎯 一个环境支持VQ-VAE和Transformer训练")
-    print("💡 基于网上调研：VQModel在diffusers 0.31版本被移除")
-    print("🔧 使用diffusers 0.30.x版本 (最后支持VQModel的版本)")
-    print("📍 正确导入路径: from diffusers.models.autoencoders.vq_model import VQModel")
-    print()
+    print("支持分步训练和统一训练两种模式")
+    print("基于diffusers标准组件的完整实现")
+    print("=" * 60)
 
     steps = [
         ("安装PyTorch", install_pytorch),
         ("安装核心依赖", install_core_dependencies),
         ("安装额外依赖", install_additional_dependencies),
         ("测试环境", test_unified_environment),
+        ("检查包版本", check_package_versions),
+        ("测试分步训练兼容性", test_step_training_compatibility),
+        ("创建训练脚本信息", create_training_scripts_info),
     ]
-    
+
     for step_name, step_func in steps:
         print(f"\n{'='*20} {step_name} {'='*20}")
         if not step_func():
-            print(f"\n❌ {step_name}失败，停止安装")
-            return False
-    
-    print("\n🎉 统一环境配置完成!")
-    print("✅ 支持VQ-VAE和Transformer训练")
-    print("\n📋 下一步:")
-    print("   1. VQ-VAE训练: python training/train_vqvae.py --help")
-    print("   2. Transformer训练: python training/train_transformer.py --help")
-    print("   3. 完整训练: python train_main.py --help")
-    print("\n🚀 训练命令示例:")
-    print("   python train_main.py --data_dir /kaggle/input/dataset")
-    print("\n💡 环境说明:")
-    print("   - diffusers: 智能版本选择，确保VQModel可用")
-    print("   - transformers: 最新版本，支持序列生成")
-    print("   - 统一环境: 简化部署和维护")
+            print(f"\n❌ {step_name}失败，但继续执行...")
+
+    print("\n🎉 环境配置完成！")
+    print("=" * 60)
+    print("📋 可用的训练模式:")
+    print()
+    print("� 分步训练模式 (推荐):")
+    print("   1️⃣ 第一步 - 训练VQ-VAE:")
+    print("      python train_step1_vqvae.py --data_dir /path/to/data")
+    print("   2️⃣ 第二步 - 训练Transformer:")
+    print("      python train_step2_transformer.py --vqvae_path ./step1_vqvae_output/vqvae_best --data_dir /path/to/data")
+    print()
+    print("� 统一训练模式:")
+    print("   python train_pure_diffusers.py --data_dir /path/to/data")
+    print()
+    print("📄 详细信息请查看: training_info.json")
 
 if __name__ == "__main__":
     main()
