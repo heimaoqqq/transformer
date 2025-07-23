@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import sys
 import os
+import torchvision.transforms as transforms
 
 # 添加项目路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -43,44 +44,76 @@ class ComponentDiagnostic:
     def _load_vqvae(self):
         """加载VQ-VAE模型"""
         try:
-            from diffusers import VQModel
-            
+            # 检查路径是否存在
+            if not self.vqvae_path.exists():
+                print(f"❌ VQ-VAE路径不存在: {self.vqvae_path}")
+                print("💡 提示：请确保模型路径正确，或使用本地模型路径")
+                return None
+
             # 尝试加载diffusers格式
-            if (self.vqvae_path / "config.json").exists():
-                print("📁 加载diffusers格式VQ-VAE...")
-                vqvae = VQModel.from_pretrained(str(self.vqvae_path))
-            else:
-                # 尝试加载checkpoint格式
-                print("📁 加载checkpoint格式VQ-VAE...")
-                checkpoint_files = list(self.vqvae_path.glob("*.pth"))
-                if not checkpoint_files:
-                    raise FileNotFoundError(f"未找到VQ-VAE模型文件: {self.vqvae_path}")
-                
-                checkpoint_path = checkpoint_files[0]
-                checkpoint = torch.load(checkpoint_path, map_location=self.device)
-                
-                # 创建VQ-VAE模型
-                vqvae = VQModel(
-                    in_channels=1,
-                    out_channels=1,
-                    down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D"],
-                    up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D"],
-                    block_out_channels=[128, 256],
-                    layers_per_block=2,
-                    act_fn="silu",
-                    latent_channels=256,
-                    sample_size=128,
-                    num_vq_embeddings=1024,
-                    vq_embed_dim=256,
-                )
-                
-                vqvae.load_state_dict(checkpoint['model_state_dict'])
-            
-            vqvae.to(self.device)
-            vqvae.eval()
-            print("✅ VQ-VAE加载成功")
-            return vqvae
-            
+            try:
+                from diffusers import VQModel
+
+                if (self.vqvae_path / "config.json").exists():
+                    print("📁 加载diffusers格式VQ-VAE...")
+                    vqvae = VQModel.from_pretrained(str(self.vqvae_path))
+                else:
+                    # 尝试加载checkpoint格式
+                    print("📁 加载checkpoint格式VQ-VAE...")
+                    checkpoint_files = list(self.vqvae_path.glob("*.pth"))
+                    if not checkpoint_files:
+                        raise FileNotFoundError(f"未找到VQ-VAE模型文件: {self.vqvae_path}")
+
+                    checkpoint_path = checkpoint_files[0]
+                    checkpoint = torch.load(checkpoint_path, map_location=self.device)
+
+                    # 创建VQ-VAE模型
+                    vqvae = VQModel(
+                        in_channels=1,
+                        out_channels=1,
+                        down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D"],
+                        up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D"],
+                        block_out_channels=[128, 256],
+                        layers_per_block=2,
+                        act_fn="silu",
+                        latent_channels=256,
+                        sample_size=128,
+                        num_vq_embeddings=1024,
+                        vq_embed_dim=256,
+                    )
+
+                    vqvae.load_state_dict(checkpoint['model_state_dict'])
+
+                vqvae.to(self.device)
+                vqvae.eval()
+                print("✅ VQ-VAE加载成功")
+                return vqvae
+
+            except ImportError:
+                print("❌ 缺少diffusers模块，尝试使用本地VQ-VAE实现...")
+                try:
+                    from models.vqvae_model import MicroDopplerVQVAE
+
+                    # 尝试加载本地VQ-VAE模型
+                    checkpoint_files = list(self.vqvae_path.glob("*.pth"))
+                    if not checkpoint_files:
+                        print("❌ 未找到本地VQ-VAE模型文件")
+                        return None
+
+                    checkpoint_path = checkpoint_files[0]
+                    print(f"📁 加载本地VQ-VAE: {checkpoint_path}")
+
+                    # 这里需要根据实际的本地VQ-VAE实现来调整
+                    vqvae = MicroDopplerVQVAE.from_pretrained(str(self.vqvae_path))
+                    vqvae.to(self.device)
+                    vqvae.eval()
+                    print("✅ 本地VQ-VAE加载成功")
+                    return vqvae
+
+                except Exception as local_e:
+                    print(f"❌ 本地VQ-VAE加载也失败: {local_e}")
+                    return None
+
         except Exception as e:
             print(f"❌ VQ-VAE加载失败: {e}")
             return None
@@ -88,36 +121,124 @@ class ComponentDiagnostic:
     def _load_transformer(self):
         """加载Transformer模型"""
         try:
+            # 检查路径是否存在
+            if not self.transformer_path.exists():
+                print(f"❌ Transformer路径不存在: {self.transformer_path}")
+                print("💡 提示：请确保模型路径正确，或使用本地模型路径")
+                return None
+
             from models.transformer_model import MicroDopplerTransformer
-            
+
             # 修复PyTorch 2.6的weights_only问题
             checkpoint = torch.load(self.transformer_path, map_location=self.device, weights_only=False)
-            
-            # 创建Transformer模型
-            transformer = MicroDopplerTransformer(
-                vocab_size=1024,
-                max_seq_len=1024,
-                num_users=31,
-                d_model=256,
-                nhead=8,
-                num_layers=6,
-                dim_feedforward=1024,
-                dropout=0.1
-            )
-            
+
+            # 检查模型类型
+            if self._is_vqvae_checkpoint(checkpoint):
+                print("❌ 错误：提供的是VQ-VAE模型，不是Transformer模型")
+                print("💡 解决方案:")
+                print("   1. 检查模型路径是否正确")
+                print("   2. 确保指向的是Transformer模型文件")
+                print("   3. VQ-VAE模型通常包含encoder/decoder权重")
+                print("   4. Transformer模型应包含transformer.transformer权重")
+                return None
+
+            # 从checkpoint中获取模型参数（如果有的话）
+            if 'args' in checkpoint:
+                args = checkpoint['args']
+                print(f"📋 从checkpoint读取参数:")
+                print(f"   vocab_size: {getattr(args, 'vocab_size', 1024)}")
+                print(f"   num_users: {getattr(args, 'num_users', 31)}")
+                print(f"   n_embd: {getattr(args, 'n_embd', 256)}")
+
+                # 使用checkpoint中的参数
+                transformer = MicroDopplerTransformer(
+                    vocab_size=getattr(args, 'vocab_size', 1024),
+                    max_seq_len=getattr(args, 'max_seq_len', 1024),
+                    num_users=getattr(args, 'num_users', 31),
+                    n_embd=getattr(args, 'n_embd', 256),
+                    n_layer=getattr(args, 'n_layer', 6),
+                    n_head=getattr(args, 'n_head', 8),
+                    dropout=getattr(args, 'dropout', 0.1),
+                    use_cross_attention=getattr(args, 'use_cross_attention', True)
+                )
+            else:
+                print("⚠️ checkpoint中没有args，使用默认参数")
+                # 创建Transformer模型 - 使用默认参数
+                transformer = MicroDopplerTransformer(
+                    vocab_size=1024,
+                    max_seq_len=1024,
+                    num_users=31,
+                    n_embd=256,  # 修正：使用n_embd而不是d_model
+                    n_layer=6,   # 修正：使用n_layer而不是num_layers
+                    n_head=8,    # 修正：使用n_head而不是nhead
+                    dropout=0.1,
+                    use_cross_attention=True
+                )
+
             transformer.load_state_dict(checkpoint['model_state_dict'])
             transformer.to(self.device)
             transformer.eval()
             print("✅ Transformer加载成功")
             return transformer
-            
+
         except Exception as e:
             print(f"❌ Transformer加载失败: {e}")
+            print("💡 常见问题:")
+            print("   - 模型类型错误：提供了VQ-VAE而非Transformer模型")
+            print("   - 参数名称不匹配 (已修复)")
+            print("   - 模型文件损坏或格式不正确")
+            print("   - 缺少必要的依赖模块")
             return None
+
+    def _is_vqvae_checkpoint(self, checkpoint):
+        """检查是否为VQ-VAE模型checkpoint"""
+        if 'model_state_dict' not in checkpoint:
+            return False
+
+        state_dict = checkpoint['model_state_dict']
+
+        # VQ-VAE特征键
+        vqvae_keys = [
+            'encoder.conv_in.weight',
+            'decoder.conv_out.weight',
+            'quantize.embedding.weight',
+            'quant_conv.weight',
+            'post_quant_conv.weight'
+        ]
+
+        # Transformer特征键
+        transformer_keys = [
+            'transformer.transformer.wte.weight',
+            'user_encoder.user_embedding.weight',
+            'transformer.lm_head.weight'
+        ]
+
+        # 检查VQ-VAE特征
+        vqvae_count = sum(1 for key in vqvae_keys if key in state_dict)
+        transformer_count = sum(1 for key in transformer_keys if key in state_dict)
+
+        return vqvae_count > transformer_count
     
     def _load_test_data(self):
         """加载测试数据"""
         try:
+            # 检查数据目录是否存在
+            if not self.data_dir.exists():
+                print(f"❌ 数据目录不存在: {self.data_dir}")
+                print("💡 提示：请确保数据路径正确，或使用本地数据路径")
+                print("💡 可用的本地路径示例:")
+                print("   - data/processed")
+                print("   - ../data/processed")
+                print("   - 或其他包含微多普勒数据的目录")
+                return self._create_dummy_data()
+
+            # 创建图像变换 - 确保输出tensor格式
+            transform = transforms.Compose([
+                transforms.Resize((128, 128)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # 归一化到[-1, 1]
+            ])
+
             # 尝试不同的数据加载方式
             dataset = None
 
@@ -126,27 +247,42 @@ class ComponentDiagnostic:
                 dataset = MicroDopplerDataset(
                     data_dir=str(self.data_dir),
                     split='test',
-                    transform=None
+                    transform=transform,
+                    return_user_id=True
                 )
             except TypeError:
                 # 方式2：不带split参数
                 try:
                     dataset = MicroDopplerDataset(
                         data_dir=str(self.data_dir),
-                        transform=None
+                        transform=transform,
+                        return_user_id=True
                     )
                 except Exception:
                     # 方式3：尝试其他可能的参数
-                    dataset = MicroDopplerDataset(str(self.data_dir))
+                    dataset = MicroDopplerDataset(
+                        str(self.data_dir),
+                        transform=transform
+                    )
 
             if dataset is None:
-                raise Exception("无法创建数据集")
+                print("❌ 无法创建数据集，使用模拟数据")
+                return self._create_dummy_data()
+
+            print(f"📊 数据集加载完成:")
+            print(f"   总样本数: {len(dataset)}")
+
+            # 获取用户统计信息
+            if hasattr(dataset, 'get_user_statistics'):
+                user_stats = dataset.get_user_statistics()
+                print(f"   用户数量: {len(user_stats)}")
 
             dataloader = DataLoader(
                 dataset,
                 batch_size=4,
                 shuffle=False,
-                num_workers=0
+                num_workers=0,
+                collate_fn=self._custom_collate_fn  # 使用自定义collate函数
             )
 
             # 获取一个batch的测试数据
@@ -157,7 +293,70 @@ class ComponentDiagnostic:
         except Exception as e:
             print(f"❌ 测试数据加载失败: {e}")
             print(f"   请检查数据目录: {self.data_dir}")
-            return None
+            print("💡 使用模拟数据进行诊断...")
+            return self._create_dummy_data()
+
+    def _create_dummy_data(self):
+        """创建模拟数据用于测试"""
+        print("🔧 创建模拟数据用于诊断...")
+
+        # 创建模拟的微多普勒时频图数据
+        batch_size = 4
+        channels = 3  # RGB
+        height, width = 128, 128
+
+        # 生成模拟图像 - 模拟微多普勒时频图的特征
+        images = torch.randn(batch_size, channels, height, width)
+        images = torch.tanh(images)  # 归一化到[-1, 1]
+
+        # 生成模拟用户ID
+        user_ids = torch.randint(0, 31, (batch_size,), dtype=torch.long)
+
+        dummy_data = {
+            'image': images,
+            'user_id': user_ids
+        }
+
+        print(f"✅ 模拟数据创建成功:")
+        print(f"   图像形状: {images.shape}")
+        print(f"   用户ID: {user_ids.tolist()}")
+
+        return dummy_data
+
+    def _custom_collate_fn(self, batch):
+        """自定义collate函数，处理不同的数据格式"""
+        try:
+            if isinstance(batch[0], tuple):
+                # 如果返回的是(image, user_id)元组
+                images = []
+                user_ids = []
+                for item in batch:
+                    if len(item) == 2:
+                        image, user_id = item
+                        images.append(image)
+                        user_ids.append(user_id)
+                    else:
+                        images.append(item[0])
+                        user_ids.append(0)  # 默认用户ID
+
+                return {
+                    'image': torch.stack(images),
+                    'user_id': torch.tensor(user_ids, dtype=torch.long)
+                }
+            else:
+                # 如果返回的是单个图像
+                images = torch.stack(batch)
+                return {
+                    'image': images,
+                    'user_id': torch.zeros(len(batch), dtype=torch.long)
+                }
+        except Exception as e:
+            print(f"❌ Collate函数错误: {e}")
+            # 返回默认格式
+            return {
+                'image': torch.zeros(4, 3, 128, 128),
+                'user_id': torch.zeros(4, dtype=torch.long)
+            }
     
     def diagnose_vqvae(self):
         """诊断VQ-VAE组件"""

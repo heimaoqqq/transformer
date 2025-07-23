@@ -204,6 +204,72 @@ python validate_main.py \
 
 ## 🔍 故障排除
 
+### **组件诊断问题修复**
+
+#### **🚨 Transformer加载失败问题**
+**问题**: `MicroDopplerTransformer.__init__() got an unexpected keyword argument 'd_model'`
+
+**原因**: 诊断脚本使用了错误的参数名称
+- 错误: `d_model`, `nhead`, `num_layers`, `dim_feedforward`
+- 正确: `n_embd`, `n_head`, `n_layer`
+
+**修复**: 已更新 `diagnose_components.py` 使用正确参数:
+```python
+transformer = MicroDopplerTransformer(
+    vocab_size=1024,
+    max_seq_len=1024,
+    num_users=31,
+    n_embd=256,           # 嵌入维度
+    n_layer=6,            # Transformer层数
+    n_head=8,             # 注意力头数
+    dropout=0.1,
+    use_cross_attention=True
+)
+```
+
+#### **🚨 模型类型错误问题**
+**问题**: `Missing key(s) in state_dict: "user_encoder.user_embedding.weight"... Unexpected key(s) in state_dict: "encoder.conv_in.weight"`
+
+**原因**: 试图将VQ-VAE模型权重加载到Transformer模型中
+
+**识别方法**:
+- **VQ-VAE模型包含**: `encoder.conv_in`, `decoder.conv_out`, `quantize.embedding`
+- **Transformer模型包含**: `transformer.transformer.wte`, `user_encoder`, `transformer.lm_head`
+
+**修复**: 已添加自动模型类型检测:
+```python
+def _is_vqvae_checkpoint(self, checkpoint):
+    # 自动检测模型类型，防止加载错误的模型
+    vqvae_keys = ['encoder.conv_in.weight', 'decoder.conv_out.weight']
+    transformer_keys = ['transformer.transformer.wte.weight', 'user_encoder']
+    # 返回是否为VQ-VAE模型
+```
+
+**解决方案**: 请确保提供正确的Transformer模型文件路径，而不是VQ-VAE模型路径
+
+#### **🚨 数据加载失败问题**
+**问题**: `default_collate: batch must contain tensors, numpy arrays, numbers, dicts or lists; found <class 'PIL.Image.Image'>`
+
+**原因**: 数据加载器返回PIL图像而非tensor
+
+**修复**: 已添加图像变换和自定义collate函数:
+```python
+transform = transforms.Compose([
+    transforms.Resize((128, 128)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+])
+```
+
+#### **🚨 微多普勒生成模式崩溃问题**
+**特征**: 用户间差异极小，容易发生模式崩溃
+
+**解决方案**:
+- 使用极端指导强度 (30-50)
+- 增加推理步数 (150-200)
+- 增强用户条件编码权重
+- 使用对比学习机制
+
 ### **常见问题**
 
 #### **Q: VQ-VAE模型在Transformer阶段找不到？**
