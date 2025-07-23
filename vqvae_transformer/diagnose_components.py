@@ -90,7 +90,8 @@ class ComponentDiagnostic:
         try:
             from models.transformer_model import MicroDopplerTransformer
             
-            checkpoint = torch.load(self.transformer_path, map_location=self.device)
+            # 修复PyTorch 2.6的weights_only问题
+            checkpoint = torch.load(self.transformer_path, map_location=self.device, weights_only=False)
             
             # 创建Transformer模型
             transformer = MicroDopplerTransformer(
@@ -117,26 +118,45 @@ class ComponentDiagnostic:
     def _load_test_data(self):
         """加载测试数据"""
         try:
-            dataset = MicroDopplerDataset(
-                data_dir=str(self.data_dir),
-                split='test',
-                transform=None
-            )
-            
+            # 尝试不同的数据加载方式
+            dataset = None
+
+            # 方式1：尝试带split参数
+            try:
+                dataset = MicroDopplerDataset(
+                    data_dir=str(self.data_dir),
+                    split='test',
+                    transform=None
+                )
+            except TypeError:
+                # 方式2：不带split参数
+                try:
+                    dataset = MicroDopplerDataset(
+                        data_dir=str(self.data_dir),
+                        transform=None
+                    )
+                except Exception:
+                    # 方式3：尝试其他可能的参数
+                    dataset = MicroDopplerDataset(str(self.data_dir))
+
+            if dataset is None:
+                raise Exception("无法创建数据集")
+
             dataloader = DataLoader(
                 dataset,
                 batch_size=4,
                 shuffle=False,
                 num_workers=0
             )
-            
+
             # 获取一个batch的测试数据
             test_batch = next(iter(dataloader))
             print(f"✅ 测试数据加载成功: {test_batch['image'].shape}")
             return test_batch
-            
+
         except Exception as e:
             print(f"❌ 测试数据加载失败: {e}")
+            print(f"   请检查数据目录: {self.data_dir}")
             return None
     
     def diagnose_vqvae(self):

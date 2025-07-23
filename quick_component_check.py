@@ -35,9 +35,17 @@ def quick_vqvae_check(vqvae_path="models/vqvae_model", data_dir="data/processed"
         # 2. 加载测试数据
         from vqvae_transformer.utils.data_loader import MicroDopplerDataset
         from torch.utils.data import DataLoader
-        
-        dataset = MicroDopplerDataset(data_dir=data_dir, split='test')
-        dataloader = DataLoader(dataset, batch_size=4, shuffle=False)
+
+        # 尝试不同的数据加载方式
+        try:
+            dataset = MicroDopplerDataset(data_dir=data_dir, split='test')
+        except TypeError:
+            try:
+                dataset = MicroDopplerDataset(data_dir=data_dir)
+            except Exception:
+                dataset = MicroDopplerDataset(data_dir)
+
+        dataloader = DataLoader(dataset, batch_size=4, shuffle=False, num_workers=0)
         test_batch = next(iter(dataloader))
         
         images = test_batch['image'].to(device)
@@ -104,8 +112,8 @@ def quick_transformer_check(transformer_path, vqvae_path="models/vqvae_model", d
         vqvae.to(device)
         vqvae.eval()
         
-        # Transformer
-        checkpoint = torch.load(transformer_path, map_location=device)
+        # Transformer - 修复PyTorch 2.6的weights_only问题
+        checkpoint = torch.load(transformer_path, map_location=device, weights_only=False)
         transformer = MicroDopplerTransformer(
             vocab_size=1024,
             max_seq_len=1024,
@@ -121,9 +129,17 @@ def quick_transformer_check(transformer_path, vqvae_path="models/vqvae_model", d
         # 2. 加载测试数据
         from vqvae_transformer.utils.data_loader import MicroDopplerDataset
         from torch.utils.data import DataLoader
-        
-        dataset = MicroDopplerDataset(data_dir=data_dir, split='test')
-        dataloader = DataLoader(dataset, batch_size=2, shuffle=False)
+
+        # 尝试不同的数据加载方式
+        try:
+            dataset = MicroDopplerDataset(data_dir=data_dir, split='test')
+        except TypeError:
+            try:
+                dataset = MicroDopplerDataset(data_dir=data_dir)
+            except Exception:
+                dataset = MicroDopplerDataset(data_dir)
+
+        dataloader = DataLoader(dataset, batch_size=2, shuffle=False, num_workers=0)
         test_batch = next(iter(dataloader))
         
         images = test_batch['image'].to(device)
