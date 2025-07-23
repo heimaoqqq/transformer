@@ -362,7 +362,16 @@ class TransformerTrainer:
 
             for i in indices:
                 try:
-                    _, user_id = dataset[i]
+                    sample = dataset[i]
+
+                    # 处理不同的数据格式
+                    if isinstance(sample, dict):
+                        user_id = sample['user_id']
+                    elif isinstance(sample, (list, tuple)) and len(sample) == 2:
+                        _, user_id = sample
+                    else:
+                        continue
+
                     user_ids.add(user_id.item() if hasattr(user_id, 'item') else user_id)
                 except Exception as e:
                     continue
@@ -398,7 +407,17 @@ class TransformerTrainer:
         user_indices = {}
         for idx in range(len(dataset)):
             try:
-                _, user_id = dataset[idx]
+                sample = dataset[idx]
+
+                # 处理不同的数据格式
+                if isinstance(sample, dict):
+                    user_id = sample['user_id']
+                elif isinstance(sample, (list, tuple)) and len(sample) == 2:
+                    _, user_id = sample
+                else:
+                    print(f"⚠️ 未知的样本格式: {type(sample)}")
+                    continue
+
                 user_id = user_id.item() if hasattr(user_id, 'item') else user_id
 
                 if user_id not in user_indices:
@@ -1136,7 +1155,7 @@ class TransformerTrainer:
                 reconstructed = self.vqvae_model.decode(latents, force_not_quantize=True)
 
                 # 计算重建误差
-                mse = F.mse_loss(reconstructed, images)
+                mse = torch.nn.functional.mse_loss(reconstructed, images)
                 reconstruction_errors.append(mse.item())
 
                 # 收集tokens
