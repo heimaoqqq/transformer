@@ -417,16 +417,81 @@ class VQVAETrainer:
             save_path = self.output_dir / "vqvae_best"
         else:
             save_path = self.output_dir / f"vqvae_epoch_{epoch+1}"
-        
+
+            # 清理旧的检查点，只保留最近的几个（如果启用）
+            if not getattr(self.args, 'no_cleanup', False):
+                keep_count = getattr(self.args, 'keep_checkpoints', 3)
+                if keep_count > 0:  # 0表示保留所有
+                    self._cleanup_old_checkpoints(epoch, keep_last=keep_count)
+
         # 使用diffusers标准保存方法
         self.vqvae_model.save_pretrained(save_path)
-        
+
         # 保存训练信息
         torch.save({
             'epoch': epoch,
             'loss': loss,
             'args': self.args,
         }, save_path / "training_info.pth")
+
+        # 显示磁盘使用情况
+        if not is_best:
+            self._show_disk_usage()
+
+    def _cleanup_old_checkpoints(self, current_epoch, keep_last=3):
+        """清理旧的检查点，只保留最近的几个"""
+        try:
+            # 找到所有检查点目录
+            checkpoint_dirs = []
+            for path in self.output_dir.iterdir():
+                if path.is_dir() and path.name.startswith("vqvae_epoch_"):
+                    try:
+                        epoch_num = int(path.name.split("_")[-1])
+                        checkpoint_dirs.append((epoch_num, path))
+                    except ValueError:
+                        continue
+
+            # 按epoch排序
+            checkpoint_dirs.sort(key=lambda x: x[0])
+
+            # 删除旧的检查点，保留最近的keep_last个
+            if len(checkpoint_dirs) > keep_last:
+                to_delete = checkpoint_dirs[:-keep_last]
+                for epoch_num, path in to_delete:
+                    try:
+                        import shutil
+                        shutil.rmtree(path)
+                        print(f"   🗑️ 删除旧检查点: epoch_{epoch_num}")
+                    except Exception as e:
+                        print(f"   ⚠️ 删除检查点失败: {path} - {e}")
+
+        except Exception as e:
+            print(f"   ⚠️ 清理检查点时出错: {e}")
+
+    def _show_disk_usage(self):
+        """显示磁盘使用情况"""
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage(self.output_dir)
+
+            # 转换为GB
+            total_gb = total / (1024**3)
+            used_gb = used / (1024**3)
+            free_gb = free / (1024**3)
+
+            # 计算输出目录大小
+            output_size = sum(f.stat().st_size for f in self.output_dir.rglob('*') if f.is_file())
+            output_size_mb = output_size / (1024**2)
+
+            print(f"   💾 磁盘使用: {free_gb:.1f}GB可用 / {total_gb:.1f}GB总计")
+            print(f"   📁 输出目录: {output_size_mb:.1f}MB")
+
+            # 警告磁盘空间不足
+            if free_gb < 5.0:  # 少于5GB时警告
+                print(f"   ⚠️ 磁盘空间不足！建议清理或增加存储空间")
+
+        except Exception as e:
+            print(f"   ⚠️ 无法获取磁盘使用情况: {e}")
     
     def _generate_samples(self, epoch, dataloader):
         """生成重构样本"""
@@ -681,6 +746,10 @@ def main():
                        help="下采样层数 (2=32×32潜在空间, 3=16×16潜在空间, 4=8×8潜在空间)")
     parser.add_argument("--latent_space", type=str, choices=['32x32', '16x16', '8x8'],
                        help="直接指定潜在空间尺寸 (会覆盖downsample_layers)")
+    parser.add_argument("--keep_checkpoints", type=int, default=3,
+                       help="保留的检查点数量 (默认3个，设为0保留所有)")
+    parser.add_argument("--no_cleanup", action="store_true",
+                       help="禁用自动清理旧检查点")
 
     
     args = parser.parse_args()
