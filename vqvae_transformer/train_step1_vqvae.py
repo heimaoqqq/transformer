@@ -166,6 +166,8 @@ class VQVAETrainer:
         print(f"   ⚖️ 承诺损失: {self.args.commitment_cost} * ||sg[z_e] - z_q||²")
         print(f"   🔄 码本更新: 指数移动平均 (EMA)")
         print(f"   🎯 量化策略: 最近邻 + 梯度直通估计")
+        print(f"   🚨 坍缩检测: 利用率<20%时自动调整学习率")
+        print(f"   🔄 自适应调整: 动态调整commitment_cost")
 
         # 质量保证技术
         image_size = getattr(self.args, 'image_size', 128)
@@ -387,6 +389,9 @@ class VQVAETrainer:
             print(f"      VQ损失: {avg_vq_loss:.6f}")  # 增加精度显示
             print(f"      学习率: {current_lr:.6f}")
             print(f"      📚 码本利用率: {codebook_usage:.2f}% ({codebook_usage*self.args.vocab_size/100:.0f}/{self.args.vocab_size})")
+
+            # 码本坍缩检测和自适应调整
+            self._handle_codebook_collapse(codebook_usage, avg_vq_loss, epoch)
             
             # 保存最佳模型
             if avg_loss < best_loss:
@@ -733,6 +738,63 @@ class VQVAETrainer:
             print(f"   📈 使用经验估算: ~30.0% (训练初期典型值)")
             return 30.0
 
+    def _handle_codebook_collapse(self, usage_rate, vq_loss, epoch):
+        """处理码本坍缩问题"""
+
+        # 检测码本坍缩的多个指标
+        is_collapsed = False
+        collapse_reasons = []
+
+        if usage_rate < 20.0:
+            is_collapsed = True
+            collapse_reasons.append(f"利用率过低({usage_rate:.1f}%)")
+
+        if vq_loss > 15.0:
+            is_collapsed = True
+            collapse_reasons.append(f"VQ损失过高({vq_loss:.2f})")
+
+        if is_collapsed:
+            print(f"   🚨 检测到码本坍缩: {', '.join(collapse_reasons)}")
+
+            # 自适应调整策略
+            adjustments_made = []
+
+            # 1. 降低学习率
+            if hasattr(self, 'scheduler') and self.scheduler is not None:
+                # 临时降低学习率
+                for param_group in self.optimizer.param_groups:
+                    old_lr = param_group['lr']
+                    param_group['lr'] = old_lr * 0.5
+                    adjustments_made.append(f"学习率: {old_lr:.6f} → {param_group['lr']:.6f}")
+
+            # 2. 调整commitment_cost
+            if vq_loss > 20.0:
+                # VQ损失太高，减少commitment_cost
+                old_cost = self.args.commitment_cost
+                self.args.commitment_cost = max(0.1, old_cost * 0.8)
+                adjustments_made.append(f"承诺损失权重: {old_cost:.2f} → {self.args.commitment_cost:.2f}")
+            elif usage_rate < 10.0:
+                # 利用率太低，增加commitment_cost
+                old_cost = self.args.commitment_cost
+                self.args.commitment_cost = min(1.0, old_cost * 1.2)
+                adjustments_made.append(f"承诺损失权重: {old_cost:.2f} → {self.args.commitment_cost:.2f}")
+
+            if adjustments_made:
+                print(f"   🔧 自动调整: {'; '.join(adjustments_made)}")
+                print(f"   💡 建议: 如果问题持续，考虑重新初始化或调整架构")
+
+            # 记录坍缩事件
+            if not hasattr(self, 'collapse_epochs'):
+                self.collapse_epochs = []
+            self.collapse_epochs.append(epoch)
+
+        elif usage_rate > 60.0:
+            print(f"   ✅ 码本利用率健康 ({usage_rate:.1f}%)")
+        elif usage_rate > 40.0:
+            print(f"   📈 码本利用率良好 ({usage_rate:.1f}%)")
+        else:
+            print(f"   ⚠️ 码本利用率偏低 ({usage_rate:.1f}%)，继续监控")
+
 def main():
     parser = argparse.ArgumentParser(description="第一步：训练VQ-VAE")
     
@@ -744,12 +806,12 @@ def main():
     parser.add_argument("--vocab_size", type=int, default=1024, help="VQ码本大小")
     parser.add_argument("--vq_embed_dim", type=int, default=256, help="VQ嵌入维度")
     parser.add_argument("--latent_channels", type=int, default=4, help="潜在空间通道数")
-    parser.add_argument("--commitment_cost", type=float, default=0.25, help="VQ commitment损失权重")
-    
+    parser.add_argument("--commitment_cost", type=float, default=0.1, help="VQ commitment损失权重 (降低以改善码本利用率)")
+
     # 训练参数
     parser.add_argument("--batch_size", type=int, default=8, help="批次大小")
     parser.add_argument("--num_epochs", type=int, default=100, help="训练轮数")
-    parser.add_argument("--learning_rate", type=float, default=1e-4, help="学习率")
+    parser.add_argument("--learning_rate", type=float, default=5e-5, help="学习率 (降低以防止码本坍缩)")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="权重衰减")
     parser.add_argument("--num_workers", type=int, default=4, help="数据加载器工作进程数")
     parser.add_argument("--save_every", type=int, default=10, help="保存检查点间隔")
