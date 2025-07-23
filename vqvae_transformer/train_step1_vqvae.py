@@ -42,14 +42,34 @@ class VQVAETrainer:
         print(f"   设备: {self.device}")
         print(f"   输出目录: {self.output_dir}")
         
+        # 根据目标潜在空间尺寸配置下采样层数
+        downsample_layers = getattr(args, 'downsample_layers', 4)  # 默认4层
+
+        # 配置下采样和上采样块
+        down_blocks = ["DownEncoderBlock2D"] * downsample_layers
+        up_blocks = ["UpDecoderBlock2D"] * downsample_layers
+
+        # 配置特征通道（根据层数调整）
+        if downsample_layers == 2:
+            channels = [128, 256]
+        elif downsample_layers == 3:
+            channels = [128, 256, 512]
+        elif downsample_layers == 4:
+            channels = [128, 256, 512, 512]
+        else:
+            channels = [128, 256, 512, 512]  # 默认配置
+
         # 创建diffusers标准VQModel
         print("🏗️ 创建diffusers VQModel")
+        print(f"   📐 下采样层数: {downsample_layers}")
+        print(f"   📊 特征通道: {channels}")
+
         self.vqvae_model = VQModel(
             in_channels=3,
             out_channels=3,
-            down_block_types=["DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D"],
-            up_block_types=["UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D"],
-            block_out_channels=[128, 256, 512, 512],
+            down_block_types=down_blocks,
+            up_block_types=up_blocks,
+            block_out_channels=channels,
             layers_per_block=2,
             act_fn="silu",
             latent_channels=args.latent_channels,
@@ -149,12 +169,34 @@ class VQVAETrainer:
 
         # 质量保证技术
         image_size = getattr(self.args, 'image_size', 128)
-        latent_size = image_size // 16  # 4次下采样：2^4 = 16倍缩小
+        downsample_layers = getattr(self.args, 'downsample_layers', 4)
+        compression_factor = 2 ** downsample_layers
+        latent_size = image_size // compression_factor
+
         print("\n🎨 高质量重建技术:")
-        print(f"   🏗️ 编码器: 4次下采样 ({image_size}→{image_size//2}→{image_size//4}→{image_size//8}→{image_size//16})")
-        print(f"   🔄 解码器: 4次上采样 ({image_size//16}→{image_size//8}→{image_size//4}→{image_size//2}→{image_size})")
-        print(f"   📊 潜在空间: {latent_size}×{latent_size}×{self.args.latent_channels} (压缩比16:1)")
-        print(f"   📈 特征通道: [128, 256, 512, 512] (逐层增加)")
+        print(f"   🏗️ 编码器: {downsample_layers}次下采样 (压缩因子: {compression_factor}:1)")
+
+        # 动态生成下采样流程显示
+        sizes = [image_size]
+        for i in range(downsample_layers):
+            sizes.append(sizes[-1] // 2)
+        size_flow = "→".join(map(str, sizes))
+        print(f"   📐 尺寸变化: {size_flow}")
+
+        print(f"   🔄 解码器: {downsample_layers}次上采样 (对应恢复)")
+        print(f"   📊 潜在空间: {latent_size}×{latent_size}×{self.args.latent_channels} (压缩比{compression_factor}:1)")
+
+        # 根据层数显示特征通道
+        if downsample_layers == 2:
+            channels_str = "[128, 256]"
+        elif downsample_layers == 3:
+            channels_str = "[128, 256, 512]"
+        elif downsample_layers == 4:
+            channels_str = "[128, 256, 512, 512]"
+        else:
+            channels_str = "[128, 256, 512, 512]"
+
+        print(f"   📈 特征通道: {channels_str} (逐层增加)")
         print(f"   🎯 激活函数: SiLU (Swish) - 平滑梯度")
         print(f"   📊 归一化: GroupNorm (32组) - 稳定训练")
         print(f"   🔧 残差连接: 深层特征保持")
@@ -589,14 +631,28 @@ def main():
     parser.add_argument("--image_size", type=int, default=128, help="目标图像尺寸 (128=快速训练, 256=最高质量)")
     parser.add_argument("--high_quality_resize", action="store_true", default=True, help="使用Lanczos插值+抗锯齿 (默认推荐)")
     parser.add_argument("--fast_resize", action="store_false", dest="high_quality_resize", help="使用双线性插值 (仅用于快速测试)")
+    parser.add_argument("--downsample_layers", type=int, default=4, choices=[2, 3, 4],
+                       help="下采样层数 (2=32×32潜在空间, 3=16×16潜在空间, 4=8×8潜在空间)")
+    parser.add_argument("--latent_space", type=str, choices=['32x32', '16x16', '8x8'],
+                       help="直接指定潜在空间尺寸 (会覆盖downsample_layers)")
+
     
     args = parser.parse_args()
-    
+
+    # 处理潜在空间尺寸参数
+    if hasattr(args, 'latent_space') and args.latent_space:
+        if args.latent_space == '32x32':
+            args.downsample_layers = 2
+        elif args.latent_space == '16x16':
+            args.downsample_layers = 3
+        elif args.latent_space == '8x8':
+            args.downsample_layers = 4
+
     print("🚀 第一步：VQ-VAE训练")
     print("=" * 60)
     print("使用diffusers.VQModel标准实现")
     print("=" * 60)
-    
+
     # 创建训练器并开始训练
     trainer = VQVAETrainer(args)
     trainer.train()
