@@ -37,7 +37,7 @@ def get_optimized_config():
     if gpu_memory >= 14:  # P100, V100等
         return {
             "vqvae_batch_size": 16,
-            "transformer_batch_size": 8,
+            "transformer_batch_size": 8,  # 保持8，避免内存不足
             "num_workers": 4,
             "mixed_precision": False,  # P100不支持混合精度
         }
@@ -101,21 +101,34 @@ def train_transformer(args, config):
     """训练Transformer"""
     print("\n🎯 阶段2: 训练Transformer")
     print("=" * 50)
-    
-    vqvae_path = Path(args.output_dir) / "vqvae"
+
+    # 确定VQ-VAE路径
+    if args.vqvae_path:
+        vqvae_path = Path(args.vqvae_path)
+        print(f"📂 使用指定的VQ-VAE路径: {vqvae_path}")
+    else:
+        vqvae_path = Path(args.output_dir) / "vqvae"
+        print(f"📂 使用默认VQ-VAE路径: {vqvae_path}")
+
     transformer_output = Path(args.output_dir) / "transformer"
     
-    # 检查VQ-VAE是否存在
+    # 检查VQ-VAE是否存在 - 支持多种格式
+    # 1. 直接diffusers格式 (config.json + safetensors在同一目录)
+    direct_diffusers = (vqvae_path / "config.json").exists() and (vqvae_path / "diffusion_pytorch_model.safetensors").exists()
+    # 2. final_model子目录格式
     final_model_exists = (vqvae_path / "final_model").exists()
+    # 3. checkpoint格式
     checkpoint_exists = (vqvae_path / "best_model.pth").exists() or len(list(vqvae_path.glob("*.pth"))) > 0
 
-    if not final_model_exists and not checkpoint_exists:
+    if not direct_diffusers and not final_model_exists and not checkpoint_exists:
         print(f"❌ 未找到VQ-VAE模型: {vqvae_path}")
-        print(f"   期望文件: final_model/ 或 *.pth")
+        print(f"   期望文件: config.json + diffusion_pytorch_model.safetensors 或 final_model/ 或 *.pth")
         return False
 
-    if final_model_exists:
-        print(f"✅ 找到VQ-VAE模型 (diffusers格式): {vqvae_path}/final_model")
+    if direct_diffusers:
+        print(f"✅ 找到VQ-VAE模型 (直接diffusers格式): {vqvae_path}")
+    elif final_model_exists:
+        print(f"✅ 找到VQ-VAE模型 (final_model子目录): {vqvae_path}/final_model")
     else:
         print(f"✅ 找到VQ-VAE模型 (checkpoint格式): {vqvae_path}/*.pth")
     
@@ -169,6 +182,8 @@ def main():
                        help="图像分辨率")
     
     # VQ-VAE参数
+    parser.add_argument("--vqvae_path", type=str, default=None,
+                       help="预训练VQ-VAE模型路径 (如果不指定，使用output_dir/vqvae)")
     parser.add_argument("--codebook_size", type=int, default=1024,
                        help="码本大小")
     parser.add_argument("--commitment_cost", type=float, default=0.25,
@@ -191,13 +206,13 @@ def main():
                        help="注意力头数")
     parser.add_argument("--transformer_epochs", type=int, default=50,
                        help="Transformer训练轮数")
-    parser.add_argument("--transformer_lr", type=float, default=1e-4,
+    parser.add_argument("--transformer_lr", type=float, default=5e-4,
                        help="Transformer学习率")
     parser.add_argument("--use_cross_attention", action="store_true",
                        help="使用交叉注意力")
     
     # 生成参数
-    parser.add_argument("--generation_temperature", type=float, default=1.0,
+    parser.add_argument("--generation_temperature", type=float, default=0.8,
                        help="生成温度")
     
     # 训练控制

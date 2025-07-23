@@ -10,20 +10,51 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import argparse
 
-def load_latest_checkpoint(output_dir):
-    """加载最新的checkpoint"""
+def load_model_for_diagnosis(output_dir):
+    """加载模型进行诊断 - 支持final_model和checkpoint"""
     output_path = Path(output_dir)
-    
-    # 查找最新的checkpoint
+
+    # 优先尝试加载final_model (diffusers格式)
+    final_model_path = output_path / "final_model"
+    if final_model_path.exists():
+        print(f"📂 检测到final_model目录: {final_model_path}")
+        try:
+            # 导入模型类
+            import sys
+            sys.path.append(str(output_path.parent.parent))
+            from models.vqvae_model import MicroDopplerVQVAE
+
+            # 加载模型
+            model = MicroDopplerVQVAE.from_pretrained(final_model_path)
+            print(f"✅ 成功加载final_model")
+
+            # 创建伪checkpoint格式以兼容现有分析函数
+            checkpoint = {
+                'model_state_dict': model.state_dict(),
+                'epoch': 'final_model',
+                'args': None,  # final_model中没有训练参数
+            }
+            return checkpoint
+
+        except Exception as e:
+            print(f"⚠️ final_model加载失败: {e}")
+            print("🔄 尝试checkpoint格式...")
+
+    # 备选：查找最新的checkpoint
     checkpoints = list(output_path.glob("checkpoint_epoch_*.pth"))
-    if not checkpoints:
-        print("❌ 未找到checkpoint文件")
-        return None
-    
-    latest_checkpoint = max(checkpoints, key=lambda x: int(x.stem.split('_')[-1]))
-    print(f"📂 加载checkpoint: {latest_checkpoint}")
-    
-    return torch.load(latest_checkpoint, map_location='cpu')
+    if checkpoints:
+        latest_checkpoint = max(checkpoints, key=lambda x: int(x.stem.split('_')[-1]))
+        print(f"📂 加载checkpoint: {latest_checkpoint}")
+        return torch.load(latest_checkpoint, map_location='cpu', weights_only=False)
+
+    # 尝试best_model.pth
+    best_model_path = output_path / "best_model.pth"
+    if best_model_path.exists():
+        print(f"📂 加载best_model: {best_model_path}")
+        return torch.load(best_model_path, map_location='cpu', weights_only=False)
+
+    print("❌ 未找到可用的模型文件")
+    return None
 
 def analyze_codebook_collapse(checkpoint):
     """分析码本坍缩情况"""
@@ -119,24 +150,28 @@ def analyze_codebook_collapse(checkpoint):
 def analyze_training_dynamics(checkpoint):
     """分析训练动态"""
     print("\n📈 训练动态分析:")
-    
+
     epoch = checkpoint['epoch']
     print(f"📅 当前epoch: {epoch}")
-    
+
     # 检查优化器状态
     if 'optimizer_state_dict' in checkpoint:
         optimizer_state = checkpoint['optimizer_state_dict']
         if 'param_groups' in optimizer_state:
             lr = optimizer_state['param_groups'][0]['lr']
             print(f"📚 当前学习率: {lr:.2e}")
-    
+    else:
+        print("📚 学习率: N/A (final_model)")
+
     # 检查训练参数
-    if 'args' in checkpoint:
+    if 'args' in checkpoint and checkpoint['args'] is not None:
         args = checkpoint['args']
         print(f"🎯 训练配置:")
         print(f"   码本大小: {args.codebook_size}")
         print(f"   Commitment权重: {args.commitment_cost}")
         print(f"   EMA衰减: {getattr(args, 'ema_decay', 'N/A')}")
+    else:
+        print("🎯 训练配置: N/A (final_model格式)")
 
 def main():
     parser = argparse.ArgumentParser(description="VQ-VAE码本诊断工具")
@@ -149,8 +184,8 @@ def main():
     print("🔬 VQ-VAE码本诊断工具")
     print("=" * 50)
     
-    # 加载最新checkpoint
-    checkpoint = load_latest_checkpoint(args.output_dir)
+    # 加载模型进行诊断
+    checkpoint = load_model_for_diagnosis(args.output_dir)
     if checkpoint is None:
         return
     

@@ -65,16 +65,37 @@ class UserConditionEncoder(nn.Module):
         self.num_users = num_users
         self.embed_dim = embed_dim
         
-        # 用户ID嵌入
-        self.user_embedding = nn.Embedding(num_users, embed_dim)
+        # 用户ID嵌入 - 支持用户ID从1开始
+        self.user_embedding = nn.Embedding(num_users + 1, embed_dim)
         
-        # 可学习的用户特征增强
+        # 极度增强的用户特征学习网络 - 专为微小差异设计
         self.user_mlp = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * 2),
+            nn.Linear(embed_dim, embed_dim * 8),  # 进一步增大隐藏层
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim * 8, embed_dim * 4),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim * 4, embed_dim * 2),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(embed_dim * 2, embed_dim),
-            nn.Dropout(dropout),
+            nn.LayerNorm(embed_dim),
+        )
+
+        # 用户特征对比学习层 - 强化用户间差异
+        self.user_contrast_proj = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim // 2),
+            nn.GELU(),
+            nn.Linear(embed_dim // 2, embed_dim),
+        )
+
+        # 用户特征多头注意力 - 增强特征表达能力
+        self.user_self_attention = nn.MultiheadAttention(
+            embed_dim=embed_dim,
+            num_heads=8,
+            dropout=dropout,
+            batch_first=True
         )
         
         # 初始化
@@ -82,14 +103,35 @@ class UserConditionEncoder(nn.Module):
     
     def forward(self, user_ids: torch.Tensor) -> torch.Tensor:
         """
+        增强的用户特征编码
         Args:
             user_ids: [batch_size] 用户ID
         Returns:
-            user_embeds: [batch_size, embed_dim] 用户嵌入
+            user_embeds: [batch_size, embed_dim] 增强的用户嵌入
         """
-        user_embeds = self.user_embedding(user_ids)
-        user_embeds = self.user_mlp(user_embeds)
-        return user_embeds
+        # 基础用户嵌入
+        user_embeds = self.user_embedding(user_ids)  # [B, embed_dim]
+
+        # 通过MLP增强特征
+        enhanced_embeds = self.user_mlp(user_embeds)  # [B, embed_dim]
+
+        # 自注意力进一步增强用户特征表达
+        # 为了使用多头注意力，我们需要序列维度
+        user_seq = enhanced_embeds.unsqueeze(1)  # [B, 1, embed_dim]
+        attended_embeds, _ = self.user_self_attention(
+            user_seq, user_seq, user_seq
+        )  # [B, 1, embed_dim]
+
+        # 残差连接
+        final_embeds = enhanced_embeds + attended_embeds.squeeze(1)
+
+        # 对比学习增强 - 强化用户特征的独特性
+        contrast_embeds = self.user_contrast_proj(final_embeds)
+
+        # 最终用户嵌入 = 基础嵌入 + 对比增强嵌入
+        final_embeds = final_embeds + contrast_embeds * 0.5  # 加权融合
+
+        return final_embeds
 
 class MicroDopplerTransformer(nn.Module):
     """
@@ -115,6 +157,9 @@ class MicroDopplerTransformer(nn.Module):
         self.num_users = num_users
         self.n_embd = n_embd
         self.use_cross_attention = use_cross_attention
+
+        # 确保在使用前设置扩展因子
+        self.user_expansion_factor = 8 if use_cross_attention else 1  # 统一设为8
         
         # 用户条件编码器
         self.user_encoder = UserConditionEncoder(
@@ -123,43 +168,169 @@ class MicroDopplerTransformer(nn.Module):
             dropout=dropout,
         )
         
-        # 配置GPT模型
+        # 配置自定义GPT模型 - 专为VQ-VAE视觉token优化
         config = GPT2Config(
-            vocab_size=vocab_size + 1,  # +1 for special tokens
-            n_positions=max_seq_len + 1,  # +1 for user token
-            n_embd=n_embd,
-            n_layer=n_layer,
-            n_head=n_head,
-            resid_pdrop=dropout,
-            embd_pdrop=dropout,
-            attn_pdrop=dropout,
-            use_cache=False,
-            add_cross_attention=use_cross_attention,
+            vocab_size=vocab_size + 1,  # VQ-VAE码本大小(1024) + 1个特殊token
+            n_positions=max_seq_len + 1,  # 序列长度(1024) + 1个用户token
+            n_embd=n_embd,  # 嵌入维度(512)
+            n_layer=n_layer,  # Transformer层数(8)
+            n_head=n_head,  # 注意力头数(8)
+            n_inner=n_embd * 4,  # FFN内部维度(2048)
+            activation_function="gelu_new",  # 使用新版GELU
+            resid_pdrop=dropout,  # 残差连接dropout
+            embd_pdrop=dropout,   # 嵌入层dropout
+            attn_pdrop=dropout,   # 注意力dropout
+            layer_norm_epsilon=1e-5,  # LayerNorm epsilon
+            initializer_range=0.02,   # 权重初始化范围
+            use_cache=False,  # 训练时不使用缓存
+            add_cross_attention=use_cross_attention,  # 是否添加交叉注意力
+            # 确保不加载预训练权重
+            _name_or_path="",
         )
         
-        # 创建GPT模型
+        # 创建自定义GPT模型（不加载预训练权重）
         self.transformer = GPT2LMHeadModel(config)
-        
+
         # 特殊token
         self.user_token_id = vocab_size  # 用户token ID
         self.pad_token_id = vocab_size   # padding token
-        
-        # 如果使用交叉注意力，需要投影层
+
+        # 增强的交叉注意力机制
         if use_cross_attention:
-            self.user_proj = nn.Linear(n_embd, n_embd)
+            # 多层用户特征投影，增强用户信息表达
+            self.user_proj = nn.Sequential(
+                nn.Linear(n_embd, n_embd * 2),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(n_embd * 2, n_embd),
+                nn.LayerNorm(n_embd),
+            )
+
+            # 用户特征扩展 - 从1个token扩展到多个token增强表达能力
+            # user_expansion_factor已在上面统一设置为8
+            self.user_expand = nn.Linear(n_embd, n_embd * self.user_expansion_factor)
+
+            # 用户特征放大器 - 增强用户信号强度
+            self.user_amplifier = nn.Sequential(
+                nn.Linear(n_embd, n_embd * 2),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(n_embd * 2, n_embd),
+                nn.GELU(),  # 移除Tanh限制，允许更大的特征差异
+            )
+
+            # 用户特征缩放因子 - 动态调整用户影响强度
+            self.user_scale_factor = nn.Parameter(torch.tensor(2.0))  # 可学习的缩放因子
         
         print(f"🤖 微多普勒Transformer初始化:")
-        print(f"   词汇表大小: {vocab_size}")
-        print(f"   序列长度: {max_seq_len}")
+        print(f"   模型类型: 自定义GPT2 (专为视觉token优化)")
+        print(f"   词汇表大小: {vocab_size} + 1个特殊token")
+        print(f"   序列长度: {max_seq_len} (32×32 token map) + 1个用户token")
         print(f"   用户数量: {num_users}")
         print(f"   嵌入维度: {n_embd}")
         print(f"   Transformer层数: {n_layer}")
         print(f"   注意力头数: {n_head}")
         print(f"   交叉注意力: {use_cross_attention}")
+        print(f"   预训练权重: 不使用 (从头训练)")
         
-        # 计算参数量
+        # 详细的参数量统计
+        user_encoder_params = sum(p.numel() for p in self.user_encoder.parameters())
+        transformer_params = sum(p.numel() for p in self.transformer.parameters())
+        if use_cross_attention:
+            user_proj_params = sum(p.numel() for p in self.user_proj.parameters())
+            user_expand_params = sum(p.numel() for p in self.user_expand.parameters())
+        else:
+            user_proj_params = 0
+            user_expand_params = 0
+
         total_params = sum(p.numel() for p in self.parameters())
-        print(f"   总参数量: {total_params/1e6:.1f}M")
+
+        print(f"   📊 参数量详细统计:")
+        print(f"      用户编码器: {user_encoder_params/1e6:.2f}M")
+        print(f"      Transformer主体: {transformer_params/1e6:.2f}M")
+        print(f"      用户投影层: {user_proj_params/1e6:.2f}M")
+        print(f"      用户扩展层: {user_expand_params/1e6:.2f}M")
+        print(f"      总参数量: {total_params/1e6:.1f}M")
+
+        # 在所有层定义完成后，重新初始化权重并验证
+        self._init_weights()
+        self._verify_enhancements()
+
+    def _init_weights(self):
+        """初始化模型权重 - 专为视觉token优化"""
+        def _init_module(module):
+            if isinstance(module, nn.Linear):
+                # 线性层使用正态分布初始化
+                torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+                if module.bias is not None:
+                    torch.nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.Embedding):
+                # 嵌入层使用正态分布初始化
+                torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            elif isinstance(module, nn.LayerNorm):
+                # LayerNorm使用标准初始化
+                torch.nn.init.zeros_(module.bias)
+                torch.nn.init.ones_(module.weight)
+
+        # 应用初始化到所有模块
+        self.apply(_init_module)
+        print("✅ 模型权重已重新初始化（专为视觉token优化）")
+
+    def _verify_enhancements(self):
+        """验证增强功能是否正确启用"""
+        print(f"🔍 验证模型增强功能:")
+
+        # 检查用户编码器
+        user_mlp_layers = len(self.user_encoder.user_mlp)
+        print(f"   用户MLP层数: {user_mlp_layers} (应该>6)")
+
+        # 检查自注意力
+        has_self_attention = hasattr(self.user_encoder, 'user_self_attention')
+        print(f"   用户自注意力: {'✅启用' if has_self_attention else '❌未启用'}")
+
+        # 检查交叉注意力增强
+        if self.use_cross_attention:
+            # 通过参数量来验证（更可靠的方法）
+            try:
+                # 检查用户投影层
+                if hasattr(self, 'user_proj') and self.user_proj is not None:
+                    proj_params = sum(p.numel() for p in self.user_proj.parameters())
+                    has_user_proj = proj_params > 0
+                    print(f"   增强用户投影: {'✅启用' if has_user_proj else '❌未启用'} ({proj_params:,}参数)")
+                else:
+                    print(f"   增强用户投影: ❌未启用 (属性不存在)")
+
+                # 检查用户扩展层
+                if hasattr(self, 'user_expand') and self.user_expand is not None:
+                    expand_params = sum(p.numel() for p in self.user_expand.parameters())
+                    has_user_expand = expand_params > 0
+                    print(f"   用户特征扩展: {'✅启用' if has_user_expand else '❌未启用'} ({expand_params:,}参数)")
+                else:
+                    print(f"   用户特征扩展: ❌未启用 (属性不存在)")
+
+                # 检查用户放大器
+                if hasattr(self, 'user_amplifier') and self.user_amplifier is not None:
+                    amplifier_params = sum(p.numel() for p in self.user_amplifier.parameters())
+                    print(f"   用户特征放大器: ✅启用 ({amplifier_params:,}参数)")
+                else:
+                    print(f"   用户特征放大器: ❌未启用")
+
+                # 检查缩放因子
+                if hasattr(self, 'user_scale_factor') and self.user_scale_factor is not None:
+                    print(f"   用户缩放因子: ✅启用 (值: {self.user_scale_factor.item():.4f})")
+                else:
+                    print(f"   用户缩放因子: ❌未启用")
+
+                print(f"   扩展因子: {getattr(self, 'user_expansion_factor', 'N/A')}")
+
+            except Exception as e:
+                print(f"   验证过程出错: {e}")
+                # 备用验证：直接列出所有属性
+                print(f"   模型属性: {[attr for attr in dir(self) if 'user' in attr.lower()]}")
+
+        # 检查GPT2交叉注意力
+        gpt2_has_cross_attn = self.transformer.config.add_cross_attention
+        print(f"   GPT2交叉注意力: {'✅启用' if gpt2_has_cross_attn else '❌未启用'}")
     
     def prepare_inputs(
         self, 
@@ -181,12 +352,15 @@ class MicroDopplerTransformer(nn.Module):
             # 训练模式：构造输入序列
             seq_len = token_sequences.size(1)
             
-            # 输入序列：[user_token] + [token1, token2, ..., token_n-1]
+            # 自回归训练：用户token预测第一个图像token，每个图像token预测下一个
             user_tokens = torch.full((batch_size, 1), self.user_token_id, device=device)
-            input_ids = torch.cat([user_tokens, token_sequences[:, :-1]], dim=1)
-            
-            # 目标序列：[user_token] + [token1, token2, ..., token_n]
-            labels = torch.cat([user_tokens, token_sequences], dim=1)
+
+            # 输入序列：[user_token] + [token1, token2, ..., token_n-1]
+            input_ids = torch.cat([user_tokens, token_sequences[:, :-1]], dim=1)  # [B, 1024]
+
+            # 目标序列：[token1] + [token2, token3, ..., token_n] (每个位置预测下一个token)
+            # 用户token位置预测token1，token1位置预测token2，...，token_n-1位置预测token_n
+            labels = token_sequences  # [B, 1024]
             
             # 注意力掩码
             attention_mask = torch.ones_like(input_ids)
@@ -202,9 +376,23 @@ class MicroDopplerTransformer(nn.Module):
         user_embeds = self.user_encoder(user_ids)  # [batch_size, n_embd]
         
         if self.use_cross_attention:
-            # 交叉注意力模式：用户嵌入作为encoder_hidden_states
-            encoder_hidden_states = self.user_proj(user_embeds).unsqueeze(1)  # [batch_size, 1, n_embd]
-            encoder_attention_mask = torch.ones(batch_size, 1, device=device)
+            # 增强的交叉注意力模式：扩展用户特征表达
+            projected_user_embeds = self.user_proj(user_embeds)  # [B, n_embd]
+
+            # 应用用户特征放大器
+            amplified_user_embeds = self.user_amplifier(projected_user_embeds)  # [B, n_embd]
+
+            # 应用可学习的缩放因子增强用户特征
+            scaled_user_embeds = amplified_user_embeds * self.user_scale_factor
+
+            # 扩展用户特征为多个token以增强表达能力
+            expanded_user_features = self.user_expand(scaled_user_embeds)  # [B, n_embd * 8]
+            expanded_user_features = expanded_user_features.view(
+                batch_size, self.user_expansion_factor, self.n_embd
+            )  # [B, 8, n_embd]
+
+            encoder_hidden_states = expanded_user_features
+            encoder_attention_mask = torch.ones(batch_size, self.user_expansion_factor, device=device)
         else:
             # 自注意力模式：用户嵌入替换用户token的嵌入
             encoder_hidden_states = None

@@ -104,7 +104,9 @@ class EMAVectorQuantizer(nn.Module):
         # Straight-through estimator
         quantized = inputs + (quantized - inputs).detach()
         
-        return quantized, loss, encoding_indices.contiguous().view(input_shape[0], -1)
+        # 保持2D形状 [B, H, W] 用于Transformer训练
+        encoding_indices_2d = encoding_indices.contiguous().view(input_shape[0], input_shape[2], input_shape[3])
+        return quantized, loss, encoding_indices_2d
     
     def _update_ema(self, encodings: torch.Tensor, flat_input: torch.Tensor):
         """更新EMA参数"""
