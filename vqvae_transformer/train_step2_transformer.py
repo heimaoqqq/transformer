@@ -65,7 +65,17 @@ class TransformerTrainer:
             self.latent_width = latent_shape[3]
         
         print(f"   📏 潜在空间形状: {self.latent_channels}x{self.latent_height}x{self.latent_width}")
-        
+
+        # 计算合适的norm_num_groups
+        # norm_num_groups必须能整除in_channels
+        possible_groups = [1, 2, 4, 8, 16, 32]
+        norm_num_groups = 1
+        for groups in possible_groups:
+            if self.latent_channels % groups == 0:
+                norm_num_groups = groups
+
+        print(f"   🔧 使用norm_num_groups: {norm_num_groups} (适配{self.latent_channels}通道)")
+
         # 创建Transformer模型
         print("🏗️ 创建diffusers Transformer2DModel")
         self.transformer_model = Transformer2DModel(
@@ -74,7 +84,7 @@ class TransformerTrainer:
             in_channels=self.latent_channels,
             num_layers=args.num_layers,
             dropout=args.dropout,
-            norm_num_groups=32,
+            norm_num_groups=norm_num_groups,  # 动态计算
             cross_attention_dim=args.cross_attention_dim,
             activation_fn="gelu",
             num_embeds_ada_norm=None,
