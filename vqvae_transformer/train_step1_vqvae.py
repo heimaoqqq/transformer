@@ -560,7 +560,7 @@ class VQVAETrainer:
         with torch.no_grad():
             # 只使用一部分数据来计算利用率，避免太慢
             sample_count = 0
-            max_samples = min(100, len(dataloader))  # 最多100个batch
+            max_samples = min(10, len(dataloader))  # 减少到10个batch进行调试
 
             for batch in dataloader:
                 if sample_count >= max_samples:
@@ -577,32 +577,78 @@ class VQVAETrainer:
                 else:
                     images = batch.to(self.device)
 
-                # 获取量化索引
-                encoder_output = self.vqvae_model.encode(images, return_dict=True)
+                try:
+                    # 方法1：尝试直接获取量化索引
+                    encoder_output = self.vqvae_model.encode(images, return_dict=True)
 
-                # 尝试获取量化索引
-                if hasattr(encoder_output, 'encoding_indices'):
-                    indices = encoder_output.encoding_indices
-                elif hasattr(encoder_output, 'quantization_indices'):
-                    indices = encoder_output.quantization_indices
-                elif hasattr(encoder_output, 'indices'):
-                    indices = encoder_output.indices
-                else:
-                    # 如果找不到索引，跳过这个batch
+                    # 调试：在第一个batch时输出encoder_output的所有属性
+                    if sample_count == 0:
+                        print(f"\n🔍 码本利用率调试:")
+                        print(f"   encoder_output类型: {type(encoder_output)}")
+                        print(f"   encoder_output属性: {list(encoder_output.__dict__.keys()) if hasattr(encoder_output, '__dict__') else 'N/A'}")
+                        if hasattr(encoder_output, 'latents'):
+                            print(f"   latents形状: {encoder_output.latents.shape}")
+
+                    # 尝试获取量化索引的多种方法
+                    indices = None
+
+                    # 方法1：检查encoder_output的各种可能属性
+                    for attr_name in ['encoding_indices', 'quantization_indices', 'indices', 'min_encoding_indices']:
+                        if hasattr(encoder_output, attr_name):
+                            indices = getattr(encoder_output, attr_name)
+                            if sample_count == 0:
+                                print(f"   ✅ 找到索引属性: {attr_name}, 形状: {indices.shape if indices is not None else 'None'}")
+                            break
+
+                    # 方法2：尝试访问VQ层
+                    if indices is None:
+                        try:
+                            # 尝试直接访问quantize层
+                            if hasattr(self.vqvae_model, 'quantize'):
+                                quantize_result = self.vqvae_model.quantize(encoder_output.latents)
+                                if hasattr(quantize_result, 'min_encoding_indices'):
+                                    indices = quantize_result.min_encoding_indices
+                                    if sample_count == 0:
+                                        print(f"   ✅ 通过quantize层获取索引, 形状: {indices.shape}")
+                        except Exception as e:
+                            if sample_count == 0:
+                                print(f"   ⚠️ quantize层访问失败: {e}")
+
+                    # 方法3：如果还是没有，尝试其他可能的方法
+                    if indices is None:
+                        if sample_count == 0:
+                            print(f"   ⚠️ 未找到量化索引，可能需要其他方法")
+                            # 检查VQModel的所有方法
+                            methods = [method for method in dir(self.vqvae_model) if not method.startswith('_')]
+                            print(f"   VQModel可用方法: {methods[:10]}...")  # 只显示前10个
+                        sample_count += 1
+                        continue
+
+                    # 收集使用的码本索引
+                    if indices is not None:
+                        unique_indices = torch.unique(indices.flatten()).cpu().numpy()
+                        used_codes.update(unique_indices)
+                        if sample_count == 0:
+                            print(f"   📊 第一个batch使用的码本数: {len(unique_indices)}")
+
+                except Exception as e:
+                    if sample_count == 0:
+                        print(f"   ❌ 码本利用率计算出错: {e}")
                     sample_count += 1
                     continue
-
-                # 收集使用的码本索引
-                if indices is not None:
-                    unique_indices = torch.unique(indices.flatten()).cpu().numpy()
-                    used_codes.update(unique_indices)
 
                 sample_count += 1
 
         self.vqvae_model.train()
 
         # 计算利用率
-        usage_rate = len(used_codes) / total_codes * 100
+        if len(used_codes) > 0:
+            usage_rate = len(used_codes) / total_codes * 100
+            print(f"   📚 总共使用的码本数: {len(used_codes)}/{total_codes}")
+        else:
+            usage_rate = 0
+            print(f"   ⚠️ 未检测到任何码本使用")
+
         return usage_rate
 
 def main():
