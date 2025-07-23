@@ -11,10 +11,34 @@ from pathlib import Path
 import argparse
 
 def load_model_for_diagnosis(output_dir):
-    """加载模型进行诊断 - 支持final_model和checkpoint"""
+    """加载模型进行诊断 - 支持final_model、checkpoint和diffusers格式"""
     output_path = Path(output_dir)
 
-    # 优先尝试加载final_model (diffusers格式)
+    print(f"🔍 检查模型路径: {output_path}")
+
+    # 检查是否是diffusers格式的VQ-VAE模型目录
+    if (output_path / "config.json").exists():
+        print(f"📂 检测到diffusers格式VQ-VAE: {output_path}")
+        try:
+            from diffusers import VQModel
+
+            # 加载diffusers VQ-VAE模型
+            model = VQModel.from_pretrained(str(output_path))
+            print(f"✅ 成功加载diffusers VQ-VAE模型")
+
+            # 创建伪checkpoint格式以兼容现有分析函数
+            checkpoint = {
+                'model_state_dict': model.state_dict(),
+                'epoch': 'diffusers_model',
+                'args': None,
+            }
+            return checkpoint
+
+        except Exception as e:
+            print(f"⚠️ diffusers模型加载失败: {e}")
+            print("🔄 尝试其他格式...")
+
+    # 优先尝试加载final_model (自定义格式)
     final_model_path = output_path / "final_model"
     if final_model_path.exists():
         print(f"📂 检测到final_model目录: {final_model_path}")
@@ -175,11 +199,18 @@ def analyze_training_dynamics(checkpoint):
 
 def main():
     parser = argparse.ArgumentParser(description="VQ-VAE码本诊断工具")
-    parser.add_argument("--output_dir", type=str, 
+    parser.add_argument("--output_dir", type=str,
                        default="/kaggle/working/outputs/vqvae_transformer/vqvae",
-                       help="VQ-VAE输出目录")
-    
+                       help="VQ-VAE输出目录或模型文件路径")
+    parser.add_argument("--vqvae_path", type=str,
+                       help="VQ-VAE模型路径 (兼容参数，等同于--output_dir)")
+
     args = parser.parse_args()
+
+    # 兼容性处理：如果提供了vqvae_path，使用它作为output_dir
+    if args.vqvae_path:
+        args.output_dir = args.vqvae_path
+        print(f"💡 使用vqvae_path参数: {args.vqvae_path}")
     
     print("🔬 VQ-VAE码本诊断工具")
     print("=" * 50)
