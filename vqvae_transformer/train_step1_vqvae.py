@@ -93,7 +93,7 @@ class VQVAETrainer:
                 data_dir=self.args.data_dir,
                 train_ratio=0.8,
                 val_ratio=0.2,
-                return_user_id=False,  # VQ-VAE训练不需要用户ID
+                return_user_id=True,  # 分层划分需要user_id，训练时再处理
                 random_seed=42
             )
 
@@ -119,7 +119,7 @@ class VQVAETrainer:
             # 不使用验证集，使用全部数据训练
             dataset = create_micro_doppler_dataset(
                 data_dir=self.args.data_dir,
-                return_user_id=False  # VQ-VAE训练不需要用户ID
+                return_user_id=False  # 不使用验证集时确实不需要user_id
             )
 
             # 创建数据加载器
@@ -152,9 +152,13 @@ class VQVAETrainer:
             pbar = tqdm(dataloader, desc=f"VQ-VAE Training")
             
             for batch_idx, batch in enumerate(pbar):
-                # 处理batch格式
+                # 处理batch格式 - 支持带user_id的数据
                 if isinstance(batch, dict):
                     images = batch['image'].to(self.device)
+                elif isinstance(batch, (list, tuple)) and len(batch) == 2:
+                    # 格式: (images, user_ids) - 只取images用于VQ-VAE训练
+                    images, _ = batch
+                    images = images.to(self.device)
                 elif isinstance(batch, (list, tuple)):
                     images = batch[0].to(self.device) if len(batch) > 0 else batch.to(self.device)
                 else:
@@ -270,6 +274,10 @@ class VQVAETrainer:
             for batch in dataloader:
                 if isinstance(batch, dict):
                     images = batch['image'][:4].to(self.device)
+                elif isinstance(batch, (list, tuple)) and len(batch) == 2:
+                    # 格式: (images, user_ids) - 只取images
+                    images, _ = batch
+                    images = images[:4].to(self.device)
                 elif isinstance(batch, (list, tuple)):
                     images = batch[0][:4].to(self.device)
                 else:
@@ -335,9 +343,13 @@ class VQVAETrainer:
 
         with torch.no_grad():
             for batch in val_dataloader:
-                # 处理batch格式
+                # 处理batch格式 - 支持带user_id的数据
                 if isinstance(batch, dict):
                     images = batch['image'].to(self.device)
+                elif isinstance(batch, (list, tuple)) and len(batch) == 2:
+                    # 格式: (images, user_ids) - 只取images用于VQ-VAE验证
+                    images, _ = batch
+                    images = images.to(self.device)
                 elif isinstance(batch, (list, tuple)):
                     images = batch[0].to(self.device) if len(batch) > 0 else batch.to(self.device)
                 else:
