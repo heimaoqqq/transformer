@@ -203,7 +203,7 @@ def create_micro_doppler_dataset(
     """
     if transform is None:
         if high_quality_resize:
-            # 高质量缩放：使用Lanczos插值 + 抗锯齿
+            # 高质量缩放：使用Lanczos插值 + 抗锯齿 (默认推荐)
             transform = transforms.Compose([
                 transforms.Resize(
                     (image_size, image_size),
@@ -214,9 +214,12 @@ def create_micro_doppler_dataset(
                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
             ])
         else:
-            # 标准缩放：双线性插值
+            # 快速缩放：双线性插值 (仅用于快速测试)
             transform = transforms.Compose([
-                transforms.Resize((image_size, image_size)),
+                transforms.Resize(
+                    (image_size, image_size),
+                    interpolation=transforms.InterpolationMode.BILINEAR
+                ),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
             ])

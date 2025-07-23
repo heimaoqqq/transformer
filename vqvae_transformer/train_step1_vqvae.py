@@ -111,14 +111,33 @@ class VQVAETrainer:
         print(f"   📉 学习率调度: CosineAnnealingLR")
 
         # 数据处理参数
+        image_size = getattr(self.args, 'image_size', 128)
+        high_quality = getattr(self.args, 'high_quality_resize', True)
+        scale_ratio = 256 / image_size
+
         print("\n🖼️ 数据处理参数:")
-        print(f"   📏 原始图像尺寸: 256x256 (您的数据集)")
-        print(f"   🎯 目标图像尺寸: {getattr(self.args, 'image_size', 128)}x{getattr(self.args, 'image_size', 128)}")
-        print(f"   🔧 缩放技术: {'Lanczos插值+抗锯齿' if getattr(self.args, 'high_quality_resize', True) else '双线性插值'}")
-        print(f"   📊 缩放比例: {256/getattr(self.args, 'image_size', 128):.1f}x下采样")
+        print(f"   📏 原始图像尺寸: 256×256 (您的微多普勒数据集)")
+        print(f"   🎯 目标图像尺寸: {image_size}×{image_size}")
+
+        # 详细的缩放技术说明
+        if high_quality:
+            print(f"   🔧 缩放技术: Lanczos插值 + 抗锯齿 (默认高质量)")
+            print(f"   ✨ 技术优势: 最佳细节保持，减少缩放伪影")
+            print(f"   🎯 适用场景: 微多普勒细节重要，推荐生产使用")
+        else:
+            print(f"   🔧 缩放技术: 双线性插值 (快速模式)")
+            print(f"   ⚡ 技术优势: 处理速度快，标准质量")
+            print(f"   🎯 适用场景: 快速实验和测试")
+
+        print(f"   📊 缩放比例: {scale_ratio:.1f}×下采样")
+        if scale_ratio > 1:
+            print(f"   ⚠️  信息损失: {(1 - 1/scale_ratio**2)*100:.1f}%像素信息")
+        else:
+            print(f"   ✅ 信息保持: 100%原始分辨率")
+
         print(f"   🎨 颜色通道: 3 (RGB)")
-        print(f"   📊 归一化: mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]")
-        print(f"   🔄 数据流程: 256x256 → Resize({getattr(self.args, 'image_size', 128)}x{getattr(self.args, 'image_size', 128)}) → VQ-VAE编码")
+        print(f"   📊 归一化范围: [-1, 1] (mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5])")
+        print(f"   🔄 数据流程: 256×256 → {'Lanczos' if high_quality else 'Bilinear'}缩放({image_size}×{image_size}) → VQ-VAE编码")
 
         # 防坍缩技术
         print("\n🛡️ 码本坍缩防护技术:")
@@ -147,7 +166,8 @@ class VQVAETrainer:
 
         print("="*60)
         print("💡 技术说明:")
-        print("   🔬 缩放技术: 使用diffusers标准scaling_factor=0.18215")
+        print("   🖼️ 图像缩放: Lanczos插值+抗锯齿 (默认高质量)")
+        print("   🔬 潜在缩放: diffusers标准scaling_factor=0.18215")
         print("   🛡️ 防坍缩: EMA更新 + 承诺损失 + 梯度直通估计")
         print("   🎨 高质量: SiLU激活 + GroupNorm + 残差连接")
         print("   📊 成熟技术: 基于VQGAN/VQVAE-2的成熟架构")
@@ -485,9 +505,9 @@ def main():
     parser.add_argument("--use_validation", action="store_true", help="是否使用验证集")
     parser.add_argument("--train_ratio", type=float, default=0.8, help="训练集比例")
     parser.add_argument("--val_ratio", type=float, default=0.2, help="验证集比例")
-    parser.add_argument("--image_size", type=int, default=128, help="目标图像尺寸 (默认128, 可选256保持原尺寸)")
-    parser.add_argument("--high_quality_resize", action="store_true", default=True, help="使用高质量Lanczos缩放")
-    parser.add_argument("--no_high_quality_resize", action="store_false", dest="high_quality_resize", help="使用标准双线性缩放")
+    parser.add_argument("--image_size", type=int, default=128, help="目标图像尺寸 (128=快速训练, 256=最高质量)")
+    parser.add_argument("--high_quality_resize", action="store_true", default=True, help="使用Lanczos插值+抗锯齿 (默认推荐)")
+    parser.add_argument("--fast_resize", action="store_false", dest="high_quality_resize", help="使用双线性插值 (仅用于快速测试)")
     
     args = parser.parse_args()
     
