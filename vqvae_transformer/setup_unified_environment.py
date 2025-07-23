@@ -296,26 +296,27 @@ def check_package_versions():
     """检查关键包的版本"""
     print("📋 检查关键包版本...")
 
+    # 包名映射：pip包名 -> Python导入名
     packages_to_check = {
-        'torch': '2.0.0',
-        'torchvision': '0.15.0',
-        'diffusers': '0.20.0',
-        'transformers': '4.20.0',
-        'numpy': '1.21.0',
-        'pillow': '8.0.0',
-        'matplotlib': '3.5.0',
-        'tqdm': '4.60.0',
+        'torch': ('torch', '2.0.0'),
+        'torchvision': ('torchvision', '0.15.0'),
+        'diffusers': ('diffusers', '0.20.0'),
+        'transformers': ('transformers', '4.20.0'),
+        'numpy': ('numpy', '1.21.0'),
+        'pillow': ('PIL', '8.0.0'),  # 修复：pillow包的导入名是PIL
+        'matplotlib': ('matplotlib', '3.5.0'),
+        'tqdm': ('tqdm', '4.60.0'),
     }
 
     all_good = True
 
-    for package, min_version in packages_to_check.items():
+    for display_name, (import_name, min_version) in packages_to_check.items():
         try:
-            module = importlib.import_module(package)
+            module = importlib.import_module(import_name)
             version = getattr(module, '__version__', 'unknown')
-            print(f"   ✅ {package}: {version}")
+            print(f"   ✅ {display_name}: {version}")
         except ImportError:
-            print(f"   ❌ {package}: 未安装")
+            print(f"   ❌ {display_name}: 未安装")
             all_good = False
 
     return all_good
