@@ -115,6 +115,15 @@ class VQVAETrainer:
             )
 
             dataloader = train_dataloader  # 主要训练用
+            dataset = train_dataset  # 用于统计信息
+
+            print(f"📊 数据集信息:")
+            print(f"   训练样本数量: {len(train_dataset)}")
+            print(f"   验证样本数量: {len(val_dataset)}")
+            print(f"   总样本数量: {len(train_dataset) + len(val_dataset)}")
+            print(f"   批次大小: {self.args.batch_size}")
+            print(f"   训练批次数量: {len(train_dataloader)}")
+            print(f"   验证批次数量: {len(val_dataloader)}")
         else:
             # 不使用验证集，使用全部数据训练
             dataset = create_micro_doppler_dataset(
@@ -131,11 +140,11 @@ class VQVAETrainer:
                 pin_memory=True
             )
             val_dataloader = None
-        
-        print(f"📊 数据集信息:")
-        print(f"   样本数量: {len(dataset)}")
-        print(f"   批次大小: {self.args.batch_size}")
-        print(f"   批次数量: {len(dataloader)}")
+
+            print(f"📊 数据集信息:")
+            print(f"   样本数量: {len(dataset)}")
+            print(f"   批次大小: {self.args.batch_size}")
+            print(f"   批次数量: {len(dataloader)}")
         
         best_loss = float('inf')
         
@@ -233,7 +242,7 @@ class VQVAETrainer:
             
             # 验证集评估
             val_loss = None
-            if hasattr(self, 'val_dataloader') and val_dataloader is not None:
+            if self.args.use_validation and val_dataloader is not None:
                 val_loss = self._validate(val_dataloader)
                 print(f"      验证损失: {val_loss:.4f}")
 
