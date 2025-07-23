@@ -56,8 +56,10 @@ class TransformerTrainer:
         print("   ✅ VQ-VAE已冻结，不会更新参数")
         
         # 获取VQ-VAE的潜在空间信息
+        # 使用与第一步训练相同的图像尺寸
+        image_size = getattr(args, 'image_size', 128)  # 从参数获取图像尺寸
         with torch.no_grad():
-            dummy_input = torch.randn(1, 3, 128, 128).to(self.device)
+            dummy_input = torch.randn(1, 3, image_size, image_size).to(self.device)
             dummy_output = self.vqvae_model.encode(dummy_input)
             latent_shape = dummy_output.latents.shape
             self.latent_channels = latent_shape[1]
@@ -414,6 +416,9 @@ def main():
     parser.add_argument("--use_validation", action="store_true", help="是否使用验证集")
     parser.add_argument("--train_ratio", type=float, default=0.8, help="训练集比例")
     parser.add_argument("--val_ratio", type=float, default=0.2, help="验证集比例")
+    parser.add_argument("--image_size", type=int, default=128, help="图像尺寸 (必须与第一步训练一致)")
+    parser.add_argument("--latent_space", type=str, choices=['32x32', '16x16', '8x8'],
+                       help="潜在空间尺寸 (必须与第一步训练一致)")
     
     args = parser.parse_args()
     
