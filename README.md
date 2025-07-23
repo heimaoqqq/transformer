@@ -48,6 +48,8 @@ micro-doppler-generation/
 │   ├── requirements.txt     # 独立依赖管理
 │   └── README.md            # VQ-VAE方案详细说明
 ├── train_improved.py          # 🔧 改进的训练脚本 (修复生成模式崩溃)
+├── quick_component_check.py   # 🔍 快速组件诊断 (5分钟判断问题源头)
+├── diagnose_usage.py          # 📋 诊断工具使用说明和自动检测
 └── README.md                 # 本文件
 ```
 
@@ -150,6 +152,23 @@ python train_main.py \
 - **用户特征保持**: 优秀
 
 ## 🔍 故障排除
+
+### 🚀 组件诊断工具 (新增)
+快速判断是VQ-VAE还是Transformer的问题：
+
+```bash
+# 1. 快速诊断 (推荐，5分钟内完成)
+python quick_component_check.py
+
+# 2. 自动诊断 (自动查找模型文件)
+python diagnose_usage.py --auto
+
+# 3. 详细诊断 (完整分析)
+python vqvae_transformer/diagnose_components.py
+
+# 4. 查看使用说明
+python diagnose_usage.py
+```
 
 ### 环境问题
 ```bash
