@@ -542,10 +542,15 @@ class TransformerTrainer:
             num_workers=self.args.num_workers,
             pin_memory=True
         )
-        
+
+        # 检查VQ-VAE质量
+        self._check_vqvae_quality(train_dataloader)
+
+        print(f"🚀 开始训练Transformer模型...")
+
         best_loss = float('inf')
         best_psnr = 0.0
-        
+
         for epoch in range(self.args.num_epochs):
             self.transformer_model.train()
             total_loss = 0
@@ -590,6 +595,10 @@ class TransformerTrainer:
                 
                 # 使用Transformer内部计算的损失
                 loss = outputs.loss
+
+                # 添加空间一致性损失
+                spatial_loss = self._compute_spatial_consistency_loss(input_tokens)
+                loss = loss + 0.1 * spatial_loss  # 权重0.1
                 
                 # 反向传播
                 loss.backward()
@@ -777,15 +786,25 @@ class TransformerTrainer:
                             attention_mask=inputs['attention_mask'],
                         )
 
-                    # 获取下一个token的logits
-                    next_token_logits = outputs.logits[:, -1, :] / self.args.generation_temperature
+                    # 获取下一个token的logits - 使用更保守的策略
+                    next_token_logits = outputs.logits[:, -1, :]
 
                     # 限制logits到有效的token范围 [0, codebook_size-1]
                     if next_token_logits.shape[-1] > self.args.codebook_size:
                         next_token_logits = next_token_logits[:, :self.args.codebook_size]
 
-                    # 采样下一个token
-                    next_token = torch.multinomial(torch.softmax(next_token_logits, dim=-1), 1)
+                    # 使用更低的温度以减少随机性
+                    temperature = max(0.3, self.args.generation_temperature * 0.5)
+                    next_token_logits = next_token_logits / temperature
+
+                    # Top-k采样以避免极端token
+                    k = min(50, next_token_logits.shape[-1] // 4)  # 限制选择范围
+                    top_k_logits, top_k_indices = torch.topk(next_token_logits, k, dim=-1)
+
+                    # 在top-k中采样
+                    top_k_probs = F.softmax(top_k_logits, dim=-1)
+                    sampled_indices = torch.multinomial(top_k_probs, num_samples=1)  # [batch_size, 1]
+                    next_token = torch.gather(top_k_indices, -1, sampled_indices)  # [batch_size, 1]
 
                     # 确保token在有效范围内
                     next_token = torch.clamp(next_token, 0, self.args.codebook_size - 1)
@@ -1033,6 +1052,98 @@ class TransformerTrainer:
 
         except Exception as e:
             print(f"⚠️ Kaggle checkpoint保存失败: {e}")
+
+    def _compute_spatial_consistency_loss(self, tokens):
+        """计算空间一致性损失，鼓励相邻token的相似性"""
+        try:
+            batch_size = tokens.shape[0]
+            # 重塑为2D: [B, 32, 32]
+            tokens_2d = tokens.view(batch_size, 32, 32).float()
+
+            # 计算水平方向的差异
+            horizontal_diff = torch.abs(tokens_2d[:, :, 1:] - tokens_2d[:, :, :-1])
+
+            # 计算垂直方向的差异
+            vertical_diff = torch.abs(tokens_2d[:, 1:, :] - tokens_2d[:, :-1, :])
+
+            # 总的空间一致性损失（鼓励平滑性）
+            spatial_loss = torch.mean(horizontal_diff) + torch.mean(vertical_diff)
+
+            return spatial_loss
+
+        except Exception as e:
+            # 如果计算失败，返回0
+            return torch.tensor(0.0, device=tokens.device)
+
+    def _check_vqvae_quality(self, dataloader):
+        """检查VQ-VAE的编码质量和码本使用情况"""
+        print(f"🔍 检查VQ-VAE质量:")
+
+        self.vqvae_model.eval()
+        all_tokens = []
+        reconstruction_errors = []
+
+        with torch.no_grad():
+            for i, batch in enumerate(dataloader):
+                if i >= 10:  # 只检查前10个batch
+                    break
+
+                images = batch['image'].to(self.device)
+
+                # VQ-VAE编码和解码
+                encoded = self.vqvae_model.encode(images)
+                if hasattr(encoded, 'latents'):
+                    latents = encoded.latents
+                else:
+                    latents = encoded
+
+                # 量化
+                quantized_latents = self.vqvae_model.quantize(latents)
+                if hasattr(quantized_latents, 'quantized'):
+                    quantized = quantized_latents.quantized
+                    indices = quantized_latents.indices
+                else:
+                    quantized = quantized_latents
+                    indices = None
+
+                # 解码
+                reconstructed = self.vqvae_model.decode(quantized)
+                if hasattr(reconstructed, 'sample'):
+                    reconstructed = reconstructed.sample
+
+                # 计算重建误差
+                mse = F.mse_loss(reconstructed, images)
+                reconstruction_errors.append(mse.item())
+
+                # 收集tokens
+                if indices is not None:
+                    all_tokens.extend(indices.flatten().cpu().numpy())
+
+        # 分析结果
+        avg_reconstruction_error = np.mean(reconstruction_errors)
+        print(f"   平均重建误差: {avg_reconstruction_error:.6f}")
+
+        if all_tokens:
+            unique_tokens = len(set(all_tokens))
+            total_possible = self.args.codebook_size
+            usage_ratio = unique_tokens / total_possible
+            print(f"   码本使用率: {unique_tokens}/{total_possible} ({usage_ratio:.2%})")
+
+            # 检查token分布
+            token_counts = np.bincount(all_tokens, minlength=total_possible)
+            most_used = np.argmax(token_counts)
+            least_used = np.argmin(token_counts[token_counts > 0]) if np.any(token_counts > 0) else 0
+
+            print(f"   最常用token: {most_used} (使用{token_counts[most_used]}次)")
+            print(f"   最少用token: {least_used} (使用{token_counts[least_used]}次)")
+
+            # 警告
+            if usage_ratio < 0.1:
+                print(f"   ⚠️ 警告：码本使用率过低，可能导致生成多样性不足")
+            if avg_reconstruction_error > 0.1:
+                print(f"   ⚠️ 警告：重建误差过高，VQ-VAE质量可能有问题")
+
+        self.vqvae_model.train()
 
 def main():
     parser = argparse.ArgumentParser(description="Transformer训练脚本")
