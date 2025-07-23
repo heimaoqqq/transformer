@@ -279,8 +279,29 @@ class VQVAETrainer:
                 
                 # VQ损失（commitment loss）
                 vq_loss = 0
+
+                # 调试：在第一个batch时输出encoder_output的属性
+                if batch_idx == 0 and epoch == 0:
+                    print(f"\n🔍 调试信息 - encoder_output属性:")
+                    print(f"   类型: {type(encoder_output)}")
+                    print(f"   属性: {dir(encoder_output)}")
+                    if hasattr(encoder_output, '__dict__'):
+                        print(f"   字典: {encoder_output.__dict__.keys()}")
+
+                # 尝试多种可能的VQ损失属性名
                 if hasattr(encoder_output, 'commit_loss') and encoder_output.commit_loss is not None:
                     vq_loss = encoder_output.commit_loss.mean()
+                elif hasattr(encoder_output, 'quantization_loss') and encoder_output.quantization_loss is not None:
+                    vq_loss = encoder_output.quantization_loss.mean()
+                elif hasattr(encoder_output, 'loss') and encoder_output.loss is not None:
+                    vq_loss = encoder_output.loss.mean()
+                elif hasattr(encoder_output, 'vq_loss') and encoder_output.vq_loss is not None:
+                    vq_loss = encoder_output.vq_loss.mean()
+                else:
+                    # 如果没有找到VQ损失，设为0（可能是diffusers版本问题）
+                    vq_loss = torch.tensor(0.0, device=images.device)
+                    if batch_idx == 0 and epoch == 0:
+                        print(f"   ⚠️ 未找到VQ损失属性，设为0")
                 
                 # 总损失
                 total_batch_loss = recon_loss + self.args.commitment_cost * vq_loss
@@ -320,11 +341,15 @@ class VQVAETrainer:
             self.scheduler.step()
             current_lr = self.scheduler.get_last_lr()[0]
             
+            # 计算码本利用率
+            codebook_usage = self._calculate_codebook_usage(dataloader)
+
             print(f"   📊 Epoch {epoch+1} 结果:")
             print(f"      总损失: {avg_loss:.4f}")
             print(f"      重构损失: {avg_recon_loss:.4f}")
-            print(f"      VQ损失: {avg_vq_loss:.4f}")
+            print(f"      VQ损失: {avg_vq_loss:.6f}")  # 增加精度显示
             print(f"      学习率: {current_lr:.6f}")
+            print(f"      📚 码本利用率: {codebook_usage:.2f}% ({codebook_usage*self.args.vocab_size/100:.0f}/{self.args.vocab_size})")
             
             # 保存最佳模型
             if avg_loss < best_loss:
@@ -469,6 +494,12 @@ class VQVAETrainer:
                 vq_loss = 0
                 if hasattr(encoder_output, 'commit_loss') and encoder_output.commit_loss is not None:
                     vq_loss = encoder_output.commit_loss.mean()
+                elif hasattr(encoder_output, 'quantization_loss') and encoder_output.quantization_loss is not None:
+                    vq_loss = encoder_output.quantization_loss.mean()
+                elif hasattr(encoder_output, 'loss') and encoder_output.loss is not None:
+                    vq_loss = encoder_output.loss.mean()
+                else:
+                    vq_loss = torch.tensor(0.0, device=images.device)
 
                 total_batch_loss = recon_loss + self.args.commitment_cost * vq_loss
 
@@ -481,6 +512,61 @@ class VQVAETrainer:
 
         self.vqvae_model.train()
         return total_loss / num_batches if num_batches > 0 else 0
+
+    def _calculate_codebook_usage(self, dataloader):
+        """计算码本利用率"""
+        self.vqvae_model.eval()
+
+        used_codes = set()
+        total_codes = self.args.vocab_size
+
+        with torch.no_grad():
+            # 只使用一部分数据来计算利用率，避免太慢
+            sample_count = 0
+            max_samples = min(100, len(dataloader))  # 最多100个batch
+
+            for batch in dataloader:
+                if sample_count >= max_samples:
+                    break
+
+                # 处理batch格式
+                if isinstance(batch, dict):
+                    images = batch['image'].to(self.device)
+                elif isinstance(batch, (list, tuple)) and len(batch) == 2:
+                    images, _ = batch
+                    images = images.to(self.device)
+                elif isinstance(batch, (list, tuple)):
+                    images = batch[0].to(self.device) if len(batch) > 0 else batch.to(self.device)
+                else:
+                    images = batch.to(self.device)
+
+                # 获取量化索引
+                encoder_output = self.vqvae_model.encode(images, return_dict=True)
+
+                # 尝试获取量化索引
+                if hasattr(encoder_output, 'encoding_indices'):
+                    indices = encoder_output.encoding_indices
+                elif hasattr(encoder_output, 'quantization_indices'):
+                    indices = encoder_output.quantization_indices
+                elif hasattr(encoder_output, 'indices'):
+                    indices = encoder_output.indices
+                else:
+                    # 如果找不到索引，跳过这个batch
+                    sample_count += 1
+                    continue
+
+                # 收集使用的码本索引
+                if indices is not None:
+                    unique_indices = torch.unique(indices.flatten()).cpu().numpy()
+                    used_codes.update(unique_indices)
+
+                sample_count += 1
+
+        self.vqvae_model.train()
+
+        # 计算利用率
+        usage_rate = len(used_codes) / total_codes * 100
+        return usage_rate
 
 def main():
     parser = argparse.ArgumentParser(description="第一步：训练VQ-VAE")
