@@ -177,6 +177,41 @@ def create_user_data_dict(data_dir: str) -> Dict[int, List[str]]:
     
     return user_data
 
+def create_micro_doppler_dataset(
+    data_dir: str,
+    transform: Optional[transforms.Compose] = None,
+    return_user_id: bool = False,
+    user_filter: Optional[List[int]] = None,
+    max_samples_per_user: Optional[int] = None,
+) -> MicroDopplerDataset:
+    """
+    创建微多普勒数据集
+
+    Args:
+        data_dir: 数据目录路径
+        transform: 图像变换
+        return_user_id: 是否返回用户ID
+        user_filter: 用户ID过滤列表
+        max_samples_per_user: 每个用户的最大样本数
+
+    Returns:
+        MicroDopplerDataset实例
+    """
+    if transform is None:
+        transform = transforms.Compose([
+            transforms.Resize((128, 128)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
+
+    return MicroDopplerDataset(
+        data_dir=data_dir,
+        transform=transform,
+        return_user_id=return_user_id,
+        user_filter=user_filter,
+        max_samples_per_user=max_samples_per_user,
+    )
+
 def create_balanced_dataset(
     data_dir: str,
     samples_per_user: int = 100,
