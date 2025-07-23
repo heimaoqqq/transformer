@@ -112,10 +112,13 @@ class VQVAETrainer:
 
         # 数据处理参数
         print("\n🖼️ 数据处理参数:")
-        print(f"   📏 图像尺寸: 128x128 (标准化)")
+        print(f"   📏 原始图像尺寸: 256x256 (您的数据集)")
+        print(f"   🎯 目标图像尺寸: {getattr(self.args, 'image_size', 128)}x{getattr(self.args, 'image_size', 128)}")
+        print(f"   🔧 缩放技术: {'Lanczos插值+抗锯齿' if getattr(self.args, 'high_quality_resize', True) else '双线性插值'}")
+        print(f"   📊 缩放比例: {256/getattr(self.args, 'image_size', 128):.1f}x下采样")
         print(f"   🎨 颜色通道: 3 (RGB)")
         print(f"   📊 归一化: mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]")
-        print(f"   🔄 数据增强: Resize + ToTensor + Normalize")
+        print(f"   🔄 数据流程: 256x256 → Resize({getattr(self.args, 'image_size', 128)}x{getattr(self.args, 'image_size', 128)}) → VQ-VAE编码")
 
         # 防坍缩技术
         print("\n🛡️ 码本坍缩防护技术:")
@@ -161,7 +164,9 @@ class VQVAETrainer:
                 train_ratio=0.8,
                 val_ratio=0.2,
                 return_user_id=True,  # 分层划分需要user_id，训练时再处理
-                random_seed=42
+                random_seed=42,
+                image_size=self.args.image_size,
+                high_quality_resize=self.args.high_quality_resize
             )
 
             # 创建数据加载器
@@ -480,6 +485,9 @@ def main():
     parser.add_argument("--use_validation", action="store_true", help="是否使用验证集")
     parser.add_argument("--train_ratio", type=float, default=0.8, help="训练集比例")
     parser.add_argument("--val_ratio", type=float, default=0.2, help="验证集比例")
+    parser.add_argument("--image_size", type=int, default=128, help="目标图像尺寸 (默认128, 可选256保持原尺寸)")
+    parser.add_argument("--high_quality_resize", action="store_true", default=True, help="使用高质量Lanczos缩放")
+    parser.add_argument("--no_high_quality_resize", action="store_false", dest="high_quality_resize", help="使用标准双线性缩放")
     
     args = parser.parse_args()
     

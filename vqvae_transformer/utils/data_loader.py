@@ -183,6 +183,8 @@ def create_micro_doppler_dataset(
     return_user_id: bool = False,
     user_filter: Optional[List[int]] = None,
     max_samples_per_user: Optional[int] = None,
+    image_size: int = 128,
+    high_quality_resize: bool = True,
 ) -> MicroDopplerDataset:
     """
     创建微多普勒数据集
@@ -193,16 +195,31 @@ def create_micro_doppler_dataset(
         return_user_id: 是否返回用户ID
         user_filter: 用户ID过滤列表
         max_samples_per_user: 每个用户的最大样本数
+        image_size: 目标图像尺寸
+        high_quality_resize: 是否使用高质量缩放
 
     Returns:
         MicroDopplerDataset实例
     """
     if transform is None:
-        transform = transforms.Compose([
-            transforms.Resize((128, 128)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
+        if high_quality_resize:
+            # 高质量缩放：使用Lanczos插值 + 抗锯齿
+            transform = transforms.Compose([
+                transforms.Resize(
+                    (image_size, image_size),
+                    interpolation=transforms.InterpolationMode.LANCZOS,
+                    antialias=True
+                ),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            ])
+        else:
+            # 标准缩放：双线性插值
+            transform = transforms.Compose([
+                transforms.Resize((image_size, image_size)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            ])
 
     return MicroDopplerDataset(
         data_dir=data_dir,
@@ -489,7 +506,7 @@ def create_stratified_split(dataset, train_ratio=0.8, val_ratio=0.2, random_seed
 
     return train_dataset, val_dataset
 
-def create_datasets_with_split(data_dir, train_ratio=0.8, val_ratio=0.2, return_user_id=True, random_seed=42):
+def create_datasets_with_split(data_dir, train_ratio=0.8, val_ratio=0.2, return_user_id=True, random_seed=42, image_size=128, high_quality_resize=True):
     """
     创建带有自动划分的数据集
 
@@ -499,6 +516,8 @@ def create_datasets_with_split(data_dir, train_ratio=0.8, val_ratio=0.2, return_
         val_ratio: 验证集比例
         return_user_id: 是否返回用户ID
         random_seed: 随机种子
+        image_size: 目标图像尺寸
+        high_quality_resize: 是否使用高质量缩放
 
     Returns:
         train_dataset, val_dataset
@@ -508,7 +527,9 @@ def create_datasets_with_split(data_dir, train_ratio=0.8, val_ratio=0.2, return_
     # 创建完整数据集
     full_dataset = create_micro_doppler_dataset(
         data_dir=data_dir,
-        return_user_id=return_user_id
+        return_user_id=return_user_id,
+        image_size=image_size,
+        high_quality_resize=high_quality_resize
     )
 
     # 执行分层划分
