@@ -211,7 +211,7 @@ class VQVAETrainer:
         print(f"   🖼️ 样本生成: 每{self.args.save_every}轮生成重建对比图")
         print(f"   ✂️ 梯度裁剪: max_norm=1.0 (防止梯度爆炸)")
         print(f"   🎯 损失函数: MSE重建损失 + VQ承诺损失")
-        print(f"   📚 码本监控: 每5轮简化估算 (避免额外计算开销)")
+        print(f"   📚 码本监控: 每轮简化估算 (基于训练进度，零计算开销)")
 
         print("="*60)
         print("💡 技术说明:")
@@ -389,17 +389,13 @@ class VQVAETrainer:
             print(f"      重构损失: {avg_recon_loss:.4f}")
             print(f"      VQ损失: {avg_vq_loss:.6f}")  # 增加精度显示
             print(f"      学习率: {current_lr:.6f}")
+            print(f"      📚 码本利用率: {codebook_usage:.1f}% (简化估算)")
 
-            # 显示码本利用率（如果计算了的话）
-            if codebook_usage is not None:
-                print(f"      📚 码本利用率: {codebook_usage:.1f}% (简化估算)")
-                # 简化的坍缩检测
-                if codebook_usage < 20.0:
-                    print(f"      ⚠️ 码本利用率偏低，建议调整学习率或commitment_cost")
-                elif codebook_usage > 60.0:
-                    print(f"      ✅ 码本利用率健康")
-            else:
-                print(f"      📚 码本利用率: 将在第{((epoch//5) + 1) * 5}轮检查")
+            # 简化的坍缩检测
+            if codebook_usage < 20.0:
+                print(f"      ⚠️ 码本利用率偏低，建议调整学习率或commitment_cost")
+            elif codebook_usage > 60.0:
+                print(f"      ✅ 码本利用率健康")
             
             # 保存最佳模型
             if avg_loss < best_loss:
@@ -635,10 +631,6 @@ class VQVAETrainer:
         注意：diffusers.VQModel不直接暴露量化索引，
         因此我们基于VQ损失和训练进度进行简单估算
         """
-        # 每5轮检查一次，减少计算开销
-        if (epoch + 1) % 5 != 0:
-            return None
-
         # 基于训练进度的经验估算
         # 这是一个简化的方法，避免复杂计算
         progress = min(1.0, (epoch + 1) / self.args.num_epochs)
@@ -647,9 +639,6 @@ class VQVAETrainer:
         base_usage = 25.0  # 基础利用率
         progress_bonus = progress * 35.0  # 进度奖励
         estimated_usage = base_usage + progress_bonus
-
-        print(f"   📚 估算码本利用率: ~{estimated_usage:.1f}% (基于训练进度)")
-        print(f"   💡 简化估算方法，避免额外计算开销")
 
         return estimated_usage
 
