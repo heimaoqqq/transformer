@@ -30,7 +30,7 @@ sys.path.insert(0, str(current_dir))
 import torch.nn as nn
 
 class UserConditionEncoder(nn.Module):
-    """用户条件编码器"""
+    """用户条件编码器 - 匹配训练时的结构"""
     def __init__(self, num_users: int, embed_dim: int = 512):
         super().__init__()
         self.num_users = num_users
@@ -39,9 +39,10 @@ class UserConditionEncoder(nn.Module):
         # 用户ID嵌入
         self.user_embedding = nn.Embedding(num_users, embed_dim)
 
-        # 投影层
-        self.projection = nn.Sequential(
+        # MLP层 (匹配训练时的结构)
+        self.mlp = nn.Sequential(
             nn.Linear(embed_dim, embed_dim),
+            nn.LayerNorm(embed_dim),
             nn.ReLU(),
             nn.Linear(embed_dim, embed_dim)
         )
@@ -56,8 +57,8 @@ class UserConditionEncoder(nn.Module):
         # 获取用户嵌入
         user_embeds = self.user_embedding(user_ids)
 
-        # 投影
-        condition_embeds = self.projection(user_embeds)
+        # MLP处理
+        condition_embeds = self.mlp(user_embeds)
 
         return condition_embeds
 
