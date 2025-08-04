@@ -103,25 +103,28 @@ def generate_with_guidance(
     # 获取用户ID映射
     print("🔍 扫描数据集...")
     data_path = Path(data_dir)
-    all_users = []
-    
+    user_labels = []  # 收集所有用户标签（与训练时一致）
+
     for user_dir in data_path.iterdir():
         if user_dir.is_dir() and user_dir.name.startswith('ID_'):
             try:
                 user_id = int(user_dir.name.split('_')[1])
                 image_files = list(user_dir.glob("*.png")) + list(user_dir.glob("*.jpg"))
                 if len(image_files) > 0:
-                    all_users.append(user_id)
+                    # 为每个图像添加用户标签（模拟训练时的数据加载）
+                    user_labels.extend([user_id] * len(image_files))
                     print(f"  用户 {user_id:2d}: {len(image_files):3d} 张图像")
             except ValueError:
                 continue
+
+    # 与训练时完全一致的映射逻辑
+    unique_users = sorted(list(set(user_labels)))
+    user_id_to_idx = {user: idx for idx, user in enumerate(unique_users)}
+    num_users = len(unique_users)
     
-    all_users = sorted(all_users)
-    user_id_to_idx = {user_id: idx for idx, user_id in enumerate(all_users)}
-    num_users = len(all_users)
-    
-    print(f"📊 发现 {num_users} 个用户: {all_users}")
+    print(f"📊 发现 {num_users} 个用户: {unique_users}")
     print(f"🗺️  用户映射: {user_id_to_idx}")
+    print(f"🔧 修复: 使用与训练时一致的映射逻辑")
     
     # 验证目标用户
     for user_id in user_ids:

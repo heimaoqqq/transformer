@@ -72,28 +72,99 @@ class SimpleConditionValidator:
 
         # 验证数据集格式
         self._validate_dataset_format()
+
+        # 验证映射一致性
+        self._validate_mapping_consistency()
     
     def _scan_users(self) -> Dict[int, str]:
-        """扫描用户目录"""
+        """扫描用户目录 - 与LDM训练时映射逻辑完全一致"""
         user_mapping = {}
-        
+        user_labels = []  # 收集所有用户标签（与LDM训练时一致）
+
+        print("🔧 使用与LDM训练时一致的用户映射逻辑...")
+
         for user_dir in self.data_dir.iterdir():
             if user_dir.is_dir() and user_dir.name.startswith('ID_'):
                 try:
                     user_id = int(user_dir.name.split('_')[1])
                     image_files = list(user_dir.glob("*.png")) + list(user_dir.glob("*.jpg"))
-                    
+
                     if len(image_files) > 0:
+                        # 为每个图像添加用户标签（模拟LDM训练时的数据加载）
+                        user_labels.extend([user_id] * len(image_files))
                         user_mapping[user_id] = str(user_dir)
                         print(f"  用户 {user_id:2d}: {len(image_files):3d} 张图像")
                     else:
                         print(f"  ⚠️  用户 {user_id:2d}: 无图像文件")
-                        
+
                 except ValueError:
                     print(f"  ❌ 无效目录名: {user_dir.name}")
                     continue
-        
+
+        # 与LDM训练时完全一致的映射逻辑
+        unique_users = sorted(list(set(user_labels)))
+        ldm_user_to_idx = {user: idx for idx, user in enumerate(unique_users)}
+
+        print(f"📊 LDM训练时的用户映射: {ldm_user_to_idx}")
+        print(f"🔧 分类器将使用相同的映射逻辑")
+
+        # 存储LDM映射供后续使用
+        self.ldm_user_to_idx = ldm_user_to_idx
+        self.ldm_idx_to_user = {idx: user for user, idx in ldm_user_to_idx.items()}
+
         return user_mapping
+
+    def _validate_mapping_consistency(self):
+        """验证分类器映射与LDM训练映射的一致性"""
+        print(f"\n🔍 验证映射一致性...")
+
+        # 模拟生成时的映射逻辑（应该与LDM训练时一致）
+        from pathlib import Path
+        data_path = Path(self.data_dir)
+        user_labels = []
+
+        for user_dir in data_path.iterdir():
+            if user_dir.is_dir() and user_dir.name.startswith('ID_'):
+                try:
+                    user_id = int(user_dir.name.split('_')[1])
+                    image_files = list(user_dir.glob("*.png")) + list(user_dir.glob("*.jpg"))
+                    if len(image_files) > 0:
+                        user_labels.extend([user_id] * len(image_files))
+                except ValueError:
+                    continue
+
+        # 生成时的映射
+        unique_users = sorted(list(set(user_labels)))
+        generation_mapping = {user: idx for idx, user in enumerate(unique_users)}
+
+        # 检查一致性
+        mapping_consistent = (self.ldm_user_to_idx == generation_mapping)
+
+        if mapping_consistent:
+            print(f"  ✅ 映射一致性验证通过")
+            print(f"  📊 共同映射: {self.ldm_user_to_idx}")
+        else:
+            print(f"  ❌ 映射不一致！")
+            print(f"  🔧 LDM训练映射: {self.ldm_user_to_idx}")
+            print(f"  🎯 生成时映射: {generation_mapping}")
+
+        return mapping_consistent
+
+    def _clean_old_classifiers(self):
+        """清理旧的分类器文件"""
+        import glob
+        classifier_files = glob.glob(str(self.output_dir / "classifier_user_*.pth"))
+
+        if classifier_files:
+            print(f"  🗑️  删除 {len(classifier_files)} 个旧分类器文件...")
+            for file_path in classifier_files:
+                try:
+                    Path(file_path).unlink()
+                    print(f"    ✅ 删除: {Path(file_path).name}")
+                except Exception as e:
+                    print(f"    ❌ 删除失败: {Path(file_path).name} - {e}")
+        else:
+            print(f"  ℹ️  没有找到旧分类器文件")
 
     def _validate_dataset_format(self):
         """验证数据集格式"""
@@ -293,8 +364,8 @@ class SimpleConditionValidator:
 
         return list(train_paths), list(train_labels), list(val_paths), list(val_labels)
     
-    def train_all_classifiers(self, epochs: int = 30, batch_size: int = 32, 
-                            max_samples_per_class: int = 500) -> Dict[int, float]:
+    def train_all_classifiers(self, epochs: int = 30, batch_size: int = 32,
+                            max_samples_per_class: int = 500, force_retrain: bool = False) -> Dict[int, float]:
         """
         训练所有用户的分类器
         
@@ -308,13 +379,19 @@ class SimpleConditionValidator:
         """
         print(f"\n🤖 开始训练 {self.num_users} 个用户分类器")
         print(f"  参数: epochs={epochs}, batch_size={batch_size}, max_samples={max_samples_per_class}")
+
+        if force_retrain:
+            print(f"🗑️  强制重新训练：删除旧分类器...")
+            self._clean_old_classifiers()
+
         print("=" * 60)
         
         classifier_accuracies = {}
         
         for user_id in sorted(self.user_mapping.keys()):
             print(f"\n👤 训练用户 {user_id} 的分类器...")
-            
+            print(f"  🗺️  LDM映射: 用户{user_id} → 索引{self.ldm_user_to_idx.get(user_id, 'NOT_FOUND')}")
+
             # 准备该用户的训练数据 (支持训练/验证集划分)
             user_dir = self.user_mapping[user_id]
             other_dirs = [self.user_mapping[uid] for uid in self.user_mapping.keys() if uid != user_id]
@@ -403,7 +480,7 @@ class SimpleConditionValidator:
                     'min_accuracy': float(min(classifier_accuracies.values())) if classifier_accuracies else 0,
                     'max_accuracy': float(max(classifier_accuracies.values())) if classifier_accuracies else 0
                 }
-            }, f, indent=2)
+            }, f, indent=2, default=self._json_serializer)
         
         print(f"\n📄 训练结果保存在: {results_file}")
         
@@ -521,7 +598,7 @@ class SimpleConditionValidator:
             # 保存验证结果
             result_file = self.output_dir / f"validation_user_{target_user_id:02d}.json"
             with open(result_file, 'w') as f:
-                json.dump(result, f, indent=2)
+                json.dump(result, f, indent=2, default=self._json_serializer)
 
             print(f"📄 验证结果保存在: {result_file}")
 
@@ -608,11 +685,24 @@ class SimpleConditionValidator:
 
         result_file = self.output_dir / f"cross_validation_user_{target_user_id:02d}.json"
         with open(result_file, 'w') as f:
-            json.dump(complete_result, f, indent=2)
+            json.dump(complete_result, f, indent=2, default=self._json_serializer)
 
         print(f"\n📄 交叉验证结果保存在: {result_file}")
 
         return complete_result
+
+    def _json_serializer(self, obj):
+        """JSON序列化器，处理numpy类型"""
+        import numpy as np
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
 
     def _analyze_cross_validation(self, cross_results: Dict, target_user_id: int,
                                 confidence_threshold: float) -> Dict:
@@ -704,6 +794,8 @@ def main():
                        help="批次大小")
     parser.add_argument("--max_samples", type=int, default=500,
                        help="每类最大样本数")
+    parser.add_argument("--force_retrain", action="store_true",
+                       help="强制重新训练所有分类器（删除旧分类器）")
 
     # 验证参数
     parser.add_argument("--generated_images_dir", type=str,
@@ -734,7 +826,8 @@ def main():
         accuracies = validator.train_all_classifiers(
             epochs=args.epochs,
             batch_size=args.batch_size,
-            max_samples_per_class=args.max_samples
+            max_samples_per_class=args.max_samples,
+            force_retrain=args.force_retrain
         )
 
         if accuracies:
