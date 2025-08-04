@@ -34,6 +34,9 @@ vae_diffusion/
 ├── train_celeba_standard.py  # 主训练脚本
 ├── train_diffusion_memory_optimized.py # 内存优化训练
 ├── train_improved_quality.py # 高质量训练
+├── generate_with_guidance.py # 🎯 支持指导强度的生成脚本
+├── validation_simple.py      # 🎯 简化条件验证脚本
+├── example_validate_condition.py # 📖 验证使用示例
 ├── check_vae.py              # VAE质量检查
 ├── install_lpips.py          # 感知损失管理
 ├── ultimate_fix_kaggle.py    # 依赖修复工具
@@ -82,10 +85,44 @@ python train_improved_quality.py \
 
 ### 5. 生成图像
 ```bash
+# 基础生成 (纯条件)
 python inference/generate.py \
     --model_dir "/kaggle/working/outputs/vae_diffusion" \
     --output_dir "generated_images" \
     --samples_per_user 10
+
+# 支持指导强度的生成 (推荐)
+python generate_with_guidance.py \
+    --vae_path "/kaggle/working/outputs/vae_diffusion/vae/final_model" \
+    --unet_path "/kaggle/working/outputs/vae_diffusion/unet/final_model" \
+    --condition_encoder_path "/kaggle/working/outputs/vae_diffusion/condition_encoder/final_model.pth" \
+    --data_dir "/kaggle/input/dataset" \
+    --user_ids 1 5 10 \
+    --num_images_per_user 50 \
+    --guidance_scale 1.5 \
+    --num_inference_steps 50
+```
+
+### 6. 验证条件扩散效果 🎯
+```bash
+# 步骤1: 训练31个用户分类器
+python validation_simple.py \
+    --data_dir "/kaggle/input/dataset" \
+    --action train \
+    --output_dir "./validation_results" \
+    --epochs 30 \
+    --batch_size 32
+
+# 步骤2: 交叉验证生成图像 (核心验证)
+python validation_simple.py \
+    --data_dir "/kaggle/input/dataset" \
+    --action cross_validate \
+    --generated_images_dir "generated_images/user_01" \
+    --target_user_id 1 \
+    --output_dir "./validation_results"
+
+# 完整验证流程示例
+python example_validate_condition.py
 ```
 
 ## 🔧 核心技术
@@ -100,12 +137,16 @@ python inference/generate.py \
 - **前向过程**: 逐步添加噪声
 - **反向过程**: 逐步去噪生成
 - **条件控制**: 用户ID条件生成
-- **分类器引导**: 增强条件控制 (可选)
+- **指导强度**: 支持CFG增强条件控制
+  - `guidance_scale=1.0`: 纯条件生成
+  - `guidance_scale=1.5-2.0`: 轻微CFG增强 (推荐)
+  - `guidance_scale>3.0`: 强CFG增强
 
 ### 验证框架
-- **度量学习**: Siamese网络验证用户特征
+- **用户分类器**: 31个ResNet-18二分类器验证用户特征
+- **交叉验证**: 用所有分类器验证生成图像，确保条件控制有效
 - **统计验证**: FID、IS等生成质量指标
-- **用户分类**: 验证用户特征保持度
+- **度量学习**: Siamese网络验证用户特征 (可选)
 - **完整流水线**: 自动化验证流程
 
 ## 📊 性能对比
@@ -126,28 +167,70 @@ python inference/generate.py \
 - **GPU**: 15GB+ VRAM (推荐)
 - **依赖**: 见 requirements.txt
 
+## 🔍 条件扩散验证详解
+
+### 验证原理
+条件扩散模型的核心是**条件控制**：给定用户ID，生成该用户的特征图像。
+
+**验证方法**：
+1. **训练31个用户分类器** - 每个用户一个二分类器（是/不是该用户）
+2. **交叉验证生成图像** - 用所有分类器验证生成图像
+3. **评估条件控制效果** - 分析识别率和区分度
+
+### 验证指标
+- **目标用户识别率** > 70% - 目标用户分类器正确识别生成图像
+- **其他用户拒绝率** > 70% - 其他用户分类器正确拒绝生成图像
+- **区分度得分** > 0.3 - 目标识别率与其他拒绝率的差值
+- **条件控制有效性** - 综合评估条件扩散是否真正有效
+
+### 验证结果解读
+```json
+{
+  "condition_effective": true,           // 条件控制是否有效
+  "discrimination_score": 0.45,          // 区分度得分 (0.45 = 优秀)
+  "target_user_performance": {
+    "success_rate": 0.78,               // 目标用户识别率 78%
+    "status": "good"
+  },
+  "other_users_performance": {
+    "avg_success_rate": 0.23,           // 其他用户平均识别率 23%
+    "status": "good"                    // 低识别率是好事(正确拒绝)
+  }
+}
+```
+
 ## 🔍 故障排除
 
 ### 常见问题
-1. **内存不足**: 
+1. **内存不足**:
    ```bash
    # 使用内存优化版本
    python train_diffusion_memory_optimized.py
    ```
 
-2. **生成质量差**: 
+2. **生成质量差**:
    ```bash
    # 使用高质量训练
    python train_improved_quality.py --use_ema --use_lpips
    ```
 
-3. **用户特征不明显**: 
+3. **条件控制无效** (验证失败):
+   ```bash
+   # 检查条件编码器训练
+   # 增加条件权重
+   python train_celeba_standard.py --condition_scale 2.0
+
+   # 重新验证
+   python validation_simple.py --action cross_validate
+   ```
+
+4. **用户特征不明显**:
    ```bash
    # 增加条件权重
    python train_celeba_standard.py --condition_scale 2.0
    ```
 
-4. **训练不稳定**: 
+5. **训练不稳定**:
    ```bash
    # 检查VAE质量
    python check_vae.py --model_path /path/to/vae
@@ -186,10 +269,22 @@ python test_ldm_config.py
 
 ## 🎯 预期效果
 
-- **生成质量**: FID < 50, IS > 2.0
-- **用户特征保持**: 分类准确率 > 80%
-- **训练稳定性**: 损失平滑下降
-- **生成多样性**: 同用户内变化丰富
+### 生成质量指标
+- **FID**: < 50 (生成图像与真实图像的分布距离)
+- **IS**: > 2.0 (生成图像的质量和多样性)
+- **PSNR**: > 25dB (重建质量)
+- **SSIM**: > 0.8 (结构相似性)
+
+### 条件控制效果 🎯
+- **目标用户识别率**: > 70% (生成图像被正确用户分类器识别)
+- **其他用户拒绝率**: > 70% (生成图像被其他分类器正确拒绝)
+- **区分度得分**: > 0.3 (条件控制的有效性)
+- **条件控制有效性**: true (综合评估通过)
+
+### 训练稳定性
+- **损失平滑下降**: VAE和扩散模型损失稳定收敛
+- **生成多样性**: 同用户内变化丰富，不同用户间差异明显
+- **用户特征保持**: 31个用户特征清晰可区分
 
 ## 📄 许可证
 
