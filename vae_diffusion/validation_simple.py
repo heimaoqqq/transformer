@@ -192,7 +192,7 @@ class SimpleConditionValidator:
             return ""
 
     def prepare_user_data_with_split(self, user_id: int, user_dir: str, other_dirs: list,
-                                   max_samples_per_class: int = 500, negative_ratio: float = 2.0,
+                                   max_samples_per_class: int = 500, use_all_negatives: bool = True,
                                    train_ratio: float = 0.8) -> tuple:
         """
         为指定用户准备训练数据，支持训练/验证集划分
@@ -202,7 +202,7 @@ class SimpleConditionValidator:
             user_dir: 该用户图像目录
             other_dirs: 其他用户目录列表
             max_samples_per_class: 正样本最大数量
-            negative_ratio: 负样本与正样本的比例
+            use_all_negatives: 是否使用所有其他用户图像作为负样本 (推荐True)
             train_ratio: 训练集比例 (0.8 = 80%训练，20%验证)
 
         Returns:
@@ -235,27 +235,40 @@ class SimpleConditionValidator:
                 other_images = list(other_path.glob("*.png")) + list(other_path.glob("*.jpg"))
                 all_negative_images.extend(other_images)
 
-        # 4. 计算需要的负样本数量
-        train_negative_needed = int(len(train_positive) * negative_ratio)
-        val_negative_needed = int(len(val_positive) * negative_ratio)
-        total_negative_needed = train_negative_needed + val_negative_needed
+        # 4. 负样本策略：使用所有其他用户的图像
+        if use_all_negatives:
+            print(f"  🎯 使用全部负样本策略")
+            print(f"  可用负样本池: {len(all_negative_images)} 张 (所有其他用户)")
 
-        print(f"  目标负样本: 训练 {train_negative_needed} 张, 验证 {val_negative_needed} 张")
-        print(f"  可用负样本池: {len(all_negative_images)} 张")
+            # 使用所有负样本，按训练/验证比例划分
+            random.shuffle(all_negative_images)
+            train_negative_split = int(len(all_negative_images) * train_ratio)
 
-        # 5. 随机选择负样本并划分
-        if len(all_negative_images) >= total_negative_needed:
-            selected_negative = random.sample(all_negative_images, total_negative_needed)
+            train_negative = all_negative_images[:train_negative_split]
+            val_negative = all_negative_images[train_negative_split:]
+
+            print(f"  负样本划分: 训练 {len(train_negative)} 张, 验证 {len(val_negative)} 张")
+            print(f"  负正比例: 训练 {len(train_negative)/len(train_positive):.1f}:1, 验证 {len(val_negative)/len(val_positive):.1f}:1")
         else:
-            selected_negative = all_negative_images
-            print(f"  ⚠️  负样本不足，使用全部 {len(selected_negative)} 张")
+            # 传统的比例采样方法 (备用)
+            negative_ratio = 5.0  # 默认5:1比例
+            train_negative_needed = int(len(train_positive) * negative_ratio)
+            val_negative_needed = int(len(val_positive) * negative_ratio)
+            total_negative_needed = train_negative_needed + val_negative_needed
 
-        # 6. 划分负样本为训练/验证集
-        random.shuffle(selected_negative)
-        train_negative = selected_negative[:train_negative_needed]
-        val_negative = selected_negative[train_negative_needed:train_negative_needed + val_negative_needed]
+            print(f"  目标负样本: 训练 {train_negative_needed} 张, 验证 {val_negative_needed} 张")
+            print(f"  可用负样本池: {len(all_negative_images)} 张")
 
-        print(f"  负样本划分: 训练 {len(train_negative)} 张, 验证 {len(val_negative)} 张")
+            if len(all_negative_images) >= total_negative_needed:
+                selected_negative = random.sample(all_negative_images, total_negative_needed)
+            else:
+                selected_negative = all_negative_images
+                print(f"  ⚠️  负样本不足，使用全部 {len(selected_negative)} 张")
+
+            random.shuffle(selected_negative)
+            train_negative = selected_negative[:train_negative_needed]
+            val_negative = selected_negative[train_negative_needed:train_negative_needed + val_negative_needed]
+
 
         # 7. 组合训练集
         train_paths = [str(p) for p in train_positive] + [str(p) for p in train_negative]
@@ -306,14 +319,14 @@ class SimpleConditionValidator:
             user_dir = self.user_mapping[user_id]
             other_dirs = [self.user_mapping[uid] for uid in self.user_mapping.keys() if uid != user_id]
 
-            # 准备数据 (80%训练，20%验证)
+            # 准备数据 (80%训练，20%验证，使用全部负样本)
             train_paths, train_labels, val_paths, val_labels = self.prepare_user_data_with_split(
                 user_id=user_id,
                 user_dir=user_dir,
                 other_dirs=other_dirs,
                 max_samples_per_class=max_samples_per_class,
-                negative_ratio=2.0,  # 2:1的负正样本比例
-                train_ratio=0.8      # 80%训练，20%验证
+                use_all_negatives=True,  # 🎯 使用所有其他用户图像作为负样本
+                train_ratio=0.8          # 80%训练，20%验证
             )
             
             if len(train_paths) == 0:
