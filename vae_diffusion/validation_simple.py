@@ -36,6 +36,7 @@ current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
 from validation.user_classifier import UserValidationSystem
+import random
 
 class SimpleConditionValidator:
     """简化的条件扩散验证器"""
@@ -189,6 +190,95 @@ class SimpleConditionValidator:
         except Exception as e:
             print(f"  ❌ 生成异常: {e}")
             return ""
+
+    def prepare_user_data_with_split(self, user_id: int, user_dir: str, other_dirs: list,
+                                   max_samples_per_class: int = 500, negative_ratio: float = 2.0,
+                                   train_ratio: float = 0.8) -> tuple:
+        """
+        为指定用户准备训练数据，支持训练/验证集划分
+
+        Args:
+            user_id: 用户ID
+            user_dir: 该用户图像目录
+            other_dirs: 其他用户目录列表
+            max_samples_per_class: 正样本最大数量
+            negative_ratio: 负样本与正样本的比例
+            train_ratio: 训练集比例 (0.8 = 80%训练，20%验证)
+
+        Returns:
+            (train_paths, train_labels, val_paths, val_labels)
+        """
+        print(f"\n👤 准备用户 {user_id} 的数据 (训练/验证划分)")
+
+        # 1. 收集正样本 (该用户的图像)
+        user_path = Path(user_dir)
+        positive_images = list(user_path.glob("*.png")) + list(user_path.glob("*.jpg"))
+        positive_images = positive_images[:max_samples_per_class]
+
+        print(f"  用户 {user_id} 总正样本: {len(positive_images)} 张")
+
+        # 2. 划分正样本为训练/验证集
+        random.shuffle(positive_images)
+        train_split = int(len(positive_images) * train_ratio)
+
+        train_positive = positive_images[:train_split]
+        val_positive = positive_images[train_split:]
+
+        print(f"  正样本划分: 训练 {len(train_positive)} 张, 验证 {len(val_positive)} 张")
+
+        # 3. 收集负样本 (其他用户的图像)
+        all_negative_images = []
+
+        for other_dir in other_dirs:
+            other_path = Path(other_dir)
+            if other_path.exists():
+                other_images = list(other_path.glob("*.png")) + list(other_path.glob("*.jpg"))
+                all_negative_images.extend(other_images)
+
+        # 4. 计算需要的负样本数量
+        train_negative_needed = int(len(train_positive) * negative_ratio)
+        val_negative_needed = int(len(val_positive) * negative_ratio)
+        total_negative_needed = train_negative_needed + val_negative_needed
+
+        print(f"  目标负样本: 训练 {train_negative_needed} 张, 验证 {val_negative_needed} 张")
+        print(f"  可用负样本池: {len(all_negative_images)} 张")
+
+        # 5. 随机选择负样本并划分
+        if len(all_negative_images) >= total_negative_needed:
+            selected_negative = random.sample(all_negative_images, total_negative_needed)
+        else:
+            selected_negative = all_negative_images
+            print(f"  ⚠️  负样本不足，使用全部 {len(selected_negative)} 张")
+
+        # 6. 划分负样本为训练/验证集
+        random.shuffle(selected_negative)
+        train_negative = selected_negative[:train_negative_needed]
+        val_negative = selected_negative[train_negative_needed:train_negative_needed + val_negative_needed]
+
+        print(f"  负样本划分: 训练 {len(train_negative)} 张, 验证 {len(val_negative)} 张")
+
+        # 7. 组合训练集
+        train_paths = [str(p) for p in train_positive] + [str(p) for p in train_negative]
+        train_labels = [1] * len(train_positive) + [0] * len(train_negative)
+
+        # 8. 组合验证集
+        val_paths = [str(p) for p in val_positive] + [str(p) for p in val_negative]
+        val_labels = [1] * len(val_positive) + [0] * len(val_negative)
+
+        # 9. 打乱数据
+        train_data = list(zip(train_paths, train_labels))
+        val_data = list(zip(val_paths, val_labels))
+        random.shuffle(train_data)
+        random.shuffle(val_data)
+
+        train_paths, train_labels = zip(*train_data) if train_data else ([], [])
+        val_paths, val_labels = zip(*val_data) if val_data else ([], [])
+
+        print(f"  ✅ 数据准备完成:")
+        print(f"    训练集: {len(train_paths)} 张 (正样本 {len(train_positive)}, 负样本 {len(train_negative)})")
+        print(f"    验证集: {len(val_paths)} 张 (正样本 {len(val_positive)}, 负样本 {len(val_negative)})")
+
+        return list(train_paths), list(train_labels), list(val_paths), list(val_labels)
     
     def train_all_classifiers(self, epochs: int = 30, batch_size: int = 32, 
                             max_samples_per_class: int = 500) -> Dict[int, float]:
@@ -212,32 +302,37 @@ class SimpleConditionValidator:
         for user_id in sorted(self.user_mapping.keys()):
             print(f"\n👤 训练用户 {user_id} 的分类器...")
             
-            # 准备该用户的训练数据
+            # 准备该用户的训练数据 (支持训练/验证集划分)
             user_dir = self.user_mapping[user_id]
             other_dirs = [self.user_mapping[uid] for uid in self.user_mapping.keys() if uid != user_id]
-            
-            # 准备数据
-            image_paths, labels = self.validation_system.prepare_user_data(
+
+            # 准备数据 (80%训练，20%验证)
+            train_paths, train_labels, val_paths, val_labels = self.prepare_user_data_with_split(
                 user_id=user_id,
-                real_images_dir=user_dir,
-                other_users_dirs=other_dirs,
+                user_dir=user_dir,
+                other_dirs=other_dirs,
                 max_samples_per_class=max_samples_per_class,
-                negative_ratio=2.0  # 2:1的负正样本比例
+                negative_ratio=2.0,  # 2:1的负正样本比例
+                train_ratio=0.8      # 80%训练，20%验证
             )
             
-            if len(image_paths) == 0:
-                print(f"  ❌ 用户 {user_id} 无可用数据，跳过")
+            if len(train_paths) == 0:
+                print(f"  ❌ 用户 {user_id} 无可用训练数据，跳过")
                 continue
-            
-            # 训练分类器
+
+            # 训练分类器 (合并训练集和验证集，让原有方法内部划分)
+            all_paths = train_paths + val_paths
+            all_labels = train_labels + val_labels
+
             try:
                 history = self.validation_system.train_user_classifier(
                     user_id=user_id,
-                    image_paths=image_paths,
-                    labels=labels,
+                    image_paths=all_paths,
+                    labels=all_labels,
                     epochs=epochs,
                     batch_size=batch_size,
-                    learning_rate=5e-4
+                    learning_rate=5e-4,
+                    validation_split=0.2  # 内部再次划分20%作为验证集
                 )
                 
                 # 记录最佳准确率
