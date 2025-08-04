@@ -26,7 +26,40 @@ import sys
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
-from training.train_diffusion import UserConditionEncoder
+# 直接定义UserConditionEncoder类，避免导入问题
+import torch.nn as nn
+
+class UserConditionEncoder(nn.Module):
+    """用户条件编码器"""
+    def __init__(self, num_users: int, embed_dim: int = 512):
+        super().__init__()
+        self.num_users = num_users
+        self.embed_dim = embed_dim
+
+        # 用户ID嵌入
+        self.user_embedding = nn.Embedding(num_users, embed_dim)
+
+        # 投影层
+        self.projection = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim)
+        )
+
+    def forward(self, user_ids):
+        """
+        Args:
+            user_ids: [batch_size] 用户ID张量
+        Returns:
+            [batch_size, embed_dim] 条件嵌入
+        """
+        # 获取用户嵌入
+        user_embeds = self.user_embedding(user_ids)
+
+        # 投影
+        condition_embeds = self.projection(user_embeds)
+
+        return condition_embeds
 
 def generate_with_guidance(
     vae_path: str,
