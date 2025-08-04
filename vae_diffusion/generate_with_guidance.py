@@ -30,37 +30,41 @@ sys.path.insert(0, str(current_dir))
 import torch.nn as nn
 
 class UserConditionEncoder(nn.Module):
-    """用户条件编码器 - 匹配训练时的结构"""
-    def __init__(self, num_users: int, embed_dim: int = 512):
+    """用户条件编码器 - 完全匹配训练时的结构"""
+    def __init__(self, num_users: int, embed_dim: int = 512, dropout: float = 0.1):
         super().__init__()
         self.num_users = num_users
         self.embed_dim = embed_dim
 
-        # 用户ID嵌入
+        # 用户嵌入层
         self.user_embedding = nn.Embedding(num_users, embed_dim)
 
-        # MLP层 (匹配训练时的结构)
+        # MLP层 - 完全匹配训练代码结构
         self.mlp = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim),
-            nn.LayerNorm(embed_dim),
-            nn.ReLU(),
-            nn.Linear(embed_dim, embed_dim)
+            nn.Linear(embed_dim, embed_dim),  # mlp.0
+            nn.SiLU(),                        # mlp.1 (激活函数)
+            nn.Dropout(dropout),              # mlp.2 (Dropout)
+            nn.Linear(embed_dim, embed_dim),  # mlp.3
         )
 
-    def forward(self, user_ids):
+        # 初始化 - 匹配训练代码
+        nn.init.normal_(self.user_embedding.weight, std=0.02)
+
+    def forward(self, user_indices):
         """
+        编码用户ID
         Args:
-            user_ids: [batch_size] 用户ID张量
+            user_indices: 用户索引 [B]
         Returns:
-            [batch_size, embed_dim] 条件嵌入
+            用户嵌入 [B, embed_dim]
         """
         # 获取用户嵌入
-        user_embeds = self.user_embedding(user_ids)
+        user_embeds = self.user_embedding(user_indices)
 
-        # MLP处理
-        condition_embeds = self.mlp(user_embeds)
+        # 通过MLP
+        user_embeds = self.mlp(user_embeds)
 
-        return condition_embeds
+        return user_embeds
 
 def generate_with_guidance(
     vae_path: str,
