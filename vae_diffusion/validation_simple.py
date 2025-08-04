@@ -436,9 +436,57 @@ class SimpleConditionValidator:
                     print(f"  ❌ 用户 {user_id} 分类器加载失败: {e}")
             else:
                 print(f"  ⚠️  用户 {user_id} 分类器文件不存在: {classifier_path}")
+                print(f"  🔄 正在为用户 {user_id} 训练新的分类器...")
+
+                # 自动训练缺失的分类器
+                try:
+                    success = self._train_missing_classifier(user_id)
+                    if success:
+                        # 重新尝试加载
+                        self.validation_system.load_classifier(user_id, str(classifier_path))
+                        loaded_count += 1
+                        print(f"  ✅ 用户 {user_id} 分类器训练并加载成功")
+                    else:
+                        print(f"  ❌ 用户 {user_id} 分类器训练失败，跳过")
+                except Exception as e:
+                    print(f"  ❌ 用户 {user_id} 分类器训练出错: {e}")
 
         print(f"📊 成功加载 {loaded_count}/{len(user_ids)} 个分类器")
         return loaded_count > 0
+
+    def _train_missing_classifier(self, user_id: int) -> bool:
+        """为缺失的用户训练分类器"""
+        try:
+            # 检查用户数据是否存在
+            user_dir = self.data_dir / f"ID_{user_id:02d}"
+            if not user_dir.exists():
+                print(f"    ❌ 用户 {user_id} 数据目录不存在: {user_dir}")
+                return False
+
+            # 检查图像数量
+            image_files = list(user_dir.glob("*.png")) + list(user_dir.glob("*.jpg"))
+            if len(image_files) < 50:  # 至少需要50张图像
+                print(f"    ❌ 用户 {user_id} 图像数量不足: {len(image_files)} < 50")
+                return False
+
+            print(f"    📊 用户 {user_id} 有 {len(image_files)} 张图像，开始训练...")
+
+            # 快速训练分类器
+            success = self.validation_system.train_user_classifier(
+                user_id=user_id,
+                data_dir=str(self.data_dir),
+                output_dir=str(self.output_dir),
+                num_epochs=5,  # 快速训练
+                batch_size=16,
+                learning_rate=0.001,
+                verbose=False
+            )
+
+            return success
+
+        except Exception as e:
+            print(f"    ❌ 训练用户 {user_id} 分类器时出错: {e}")
+            return False
 
     def validate_generated_images(self, generated_images_dir: str, target_user_id: int,
                                 confidence_threshold: float = 0.8) -> Dict:
