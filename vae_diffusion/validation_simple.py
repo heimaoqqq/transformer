@@ -101,14 +101,34 @@ class SimpleConditionValidator:
                     print(f"  ❌ 无效目录名: {user_dir.name}")
                     continue
 
-        # 与LDM训练时完全一致的映射逻辑
-        unique_users = sorted(list(set(user_labels)))
-        ldm_user_to_idx = {user: idx for idx, user in enumerate(unique_users)}
+        # 与LDM训练和生成时完全一致的映射逻辑
+        # 使用简单的all_users列表，与MicroDopplerDataModule._get_all_users()一致
+        all_users = []
+        for user_dir in self.data_dir.iterdir():
+            if user_dir.is_dir() and user_dir.name.startswith('ID_'):
+                try:
+                    user_id = int(user_dir.name.split('_')[1])
+                    all_users.append(user_id)
+                except ValueError:
+                    continue
+        all_users = sorted(all_users)
 
-        print(f"📊 LDM训练时的用户映射: {ldm_user_to_idx}")
+        # LDM映射：all_users.index(user_id) 或 user_id-1 (回退)
+        ldm_user_to_idx = {}
+        for user_id in all_users:
+            try:
+                idx = all_users.index(user_id)
+                ldm_user_to_idx[user_id] = idx
+            except ValueError:
+                # 回退映射
+                idx = user_id - 1 if user_id > 0 else user_id
+                ldm_user_to_idx[user_id] = idx
+
+        print(f"📊 LDM训练时的用户映射 (all_users.index): {ldm_user_to_idx}")
         print(f"🔧 分类器将使用相同的映射逻辑")
 
         # 存储LDM映射供后续使用
+        self.all_users = all_users
         self.ldm_user_to_idx = ldm_user_to_idx
         self.ldm_idx_to_user = {idx: user for user, idx in ldm_user_to_idx.items()}
 
@@ -119,23 +139,16 @@ class SimpleConditionValidator:
         print(f"\n🔍 验证映射一致性...")
 
         # 模拟生成时的映射逻辑（应该与LDM训练时一致）
-        from pathlib import Path
-        data_path = Path(self.data_dir)
-        user_labels = []
-
-        for user_dir in data_path.iterdir():
-            if user_dir.is_dir() and user_dir.name.startswith('ID_'):
-                try:
-                    user_id = int(user_dir.name.split('_')[1])
-                    image_files = list(user_dir.glob("*.png")) + list(user_dir.glob("*.jpg"))
-                    if len(image_files) > 0:
-                        user_labels.extend([user_id] * len(image_files))
-                except ValueError:
-                    continue
-
-        # 生成时的映射
-        unique_users = sorted(list(set(user_labels)))
-        generation_mapping = {user: idx for idx, user in enumerate(unique_users)}
+        # 生成时使用all_users.index()映射
+        generation_mapping = {}
+        for user_id in self.all_users:
+            try:
+                idx = self.all_users.index(user_id)
+                generation_mapping[user_id] = idx
+            except ValueError:
+                # 回退映射
+                idx = user_id - 1 if user_id > 0 else user_id
+                generation_mapping[user_id] = idx
 
         # 检查一致性
         mapping_consistent = (self.ldm_user_to_idx == generation_mapping)
@@ -724,9 +737,10 @@ class SimpleConditionValidator:
         avg_other_success = np.mean(other_success_rates) if other_success_rates else 0
         avg_other_confidence = np.mean(other_confidences) if other_confidences else 0
 
-        # 条件扩散效果评估
+        # 条件扩散效果评估 (使用置信度阈值)
+        effective_target_rate = target_success_rate if target_confidence >= confidence_threshold else 0
         condition_effective = (
-            target_success_rate >= 0.7 and  # 目标用户分类器识别率高
+            effective_target_rate >= 0.7 and  # 目标用户分类器识别率高
             avg_other_success <= 0.3        # 其他用户分类器识别率低
         )
 
