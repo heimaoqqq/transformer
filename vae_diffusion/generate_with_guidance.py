@@ -161,26 +161,33 @@ def generate_with_guidance(
     unet.to(device)
     unet.eval()
     
-    # 3. 条件编码器
+    # 3. 条件编码器 - 与训练时完全一致
     print("  加载条件编码器...")
     condition_encoder = UserConditionEncoder(
         num_users=num_users,
-        embed_dim=unet.config.cross_attention_dim
+        embed_dim=unet.config.cross_attention_dim,  # 默认512
+        dropout=0.1  # 与训练时默认值一致
     )
     condition_encoder_state = torch.load(condition_encoder_path, map_location='cpu')
     condition_encoder.load_state_dict(condition_encoder_state)
     condition_encoder.to(device)
     condition_encoder.eval()
     
-    # 4. 调度器
+    # 4. 调度器 - 与训练时完全一致
     print("  创建调度器...")
     noise_scheduler = DDPMScheduler(
-        num_train_timesteps=1000,
+        num_train_timesteps=1000,  # 与训练时默认值一致
         beta_start=0.00085,
         beta_end=0.012,
         beta_schedule="scaled_linear",
+        trained_betas=None,
+        variance_type="fixed_small",  # 训练时参数
         clip_sample=False,
         prediction_type="epsilon",
+        thresholding=False,  # 训练时参数
+        dynamic_thresholding_ratio=0.995,  # 训练时参数
+        clip_sample_range=1.0,  # 训练时参数
+        sample_max_value=1.0,  # 训练时参数
     )
     ddim_scheduler = DDIMScheduler.from_config(noise_scheduler.config)
     ddim_scheduler.set_timesteps(num_inference_steps)
